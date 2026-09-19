@@ -791,3 +791,43 @@ async def test_leaked_reservations_would_starve_sizing():
         max(0.0, effective), 0.9, sw.RiskConfig(),
     )
     assert o is None, "a starved bankroll produces no orders, silently"
+
+
+# --------------------------------------------------------------------------
+# Sampling parameters: Anthropic removed them on 4.6+ and returns 400.
+# litellm passes them through, so an unguarded temperature is a hard
+# failure the moment TIER2/TIER3 point at Claude.
+# --------------------------------------------------------------------------
+
+async def test_sampling_dropped_for_models_that_reject_it():
+    for model in (
+        "anthropic/claude-opus-5",
+        "anthropic/claude-sonnet-5",
+        "anthropic/claude-opus-4-8",
+        "anthropic/claude-opus-4-7",
+        "anthropic/claude-fable-5-1",
+    ):
+        assert sw.sampling_kwargs(model, 0.3) == {}, (
+            f"{model} returns 400 when temperature is present"
+        )
+
+
+async def test_sampling_kept_where_it_is_still_accepted():
+    for model in (
+        "anthropic/claude-haiku-4-5",
+        "gemini/gemini-2.5-flash",
+        "openai/gpt-6-astra",
+    ):
+        assert sw.sampling_kwargs(model, 0.3) == {"temperature": 0.3}, (
+            f"{model} still accepts temperature; dropping it changes behaviour"
+        )
+
+
+async def test_default_tier_models_are_self_consistent():
+    """
+    The shipped defaults must not be a combination that 400s on the first
+    escalation -- which is the first time anyone would find out.
+    """
+    for model in (sw.TIER2_MODEL, sw.TIER3_MODEL):
+        kwargs = sw.sampling_kwargs(model, 0.1)
+        assert kwargs in ({}, {"temperature": 0.1})

@@ -58,8 +58,8 @@ class Config:
     # a model update would silently recalibrate every gate threshold under
     # you. Use a fully dated id once you have calibrated against one.
     jev_model: str = "jev-latest"
-    tier2_model: str = "gemini/gemini-2.5-flash"
-    tier3_model: str = "openai/gpt-6-astra"
+    tier2_model: str = "anthropic/claude-haiku-4-5"
+    tier3_model: str = "anthropic/claude-opus-5"
 
     # --- mode --------------------------------------------------------
     # Default to the safe thing. Live trading must be turned on
@@ -91,8 +91,8 @@ class Config:
             polymarket_key_id=os.getenv("POLYMARKET_KEY_ID", ""),
             polymarket_secret_key=os.getenv("POLYMARKET_SECRET_KEY", ""),
             jev_model=os.getenv("TYPESAFE_DEFAULT_MODEL", "jev-latest"),
-            tier2_model=os.getenv("TIER2_MODEL", "gemini/gemini-2.5-flash"),
-            tier3_model=os.getenv("TIER3_MODEL", "openai/gpt-6-astra"),
+            tier2_model=os.getenv("TIER2_MODEL", "anthropic/claude-haiku-4-5"),
+            tier3_model=os.getenv("TIER3_MODEL", "anthropic/claude-opus-5"),
             mode=mode,
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             shadow_db=os.getenv("SHADOW_DB", "shadow.db"),

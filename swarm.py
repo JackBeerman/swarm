@@ -2,8 +2,8 @@
 swarm.py -- three-tier evaluation pipeline for the Polymarket US trading daemon.
 
     Tier 1  Jev (TypeSafe System One)   ~$0.0001   every candidate
-    Tier 2  Gemini 2.5 Flash x3         ~$0.10     only past the gate
-    Tier 3  gpt-6-astra                 ~$0.08     only past the gate
+    Tier 2  Claude Haiku 4.5 x3         ~$0.02     only past the gate
+    Tier 3  Claude Opus 5                ~$0.05     only past the gate
 
 The whole economic argument for this shape is that Tier 1 is effectively
 free and Tiers 2/3 are not. The gate must therefore be *strict*: at a $100
@@ -55,8 +55,8 @@ log = logging.getLogger("swarm")
 TYPESAFE_BASE_URL = os.getenv("TYPESAFE_BASE_URL", "https://api.typesafe.ai")
 TYPESAFE_MODEL = os.getenv("TYPESAFE_DEFAULT_MODEL", "jev-latest")
 
-TIER2_MODEL = os.getenv("TIER2_MODEL", "gemini/gemini-2.5-flash")
-TIER3_MODEL = os.getenv("TIER3_MODEL", "openai/gpt-6-astra")
+TIER2_MODEL = os.getenv("TIER2_MODEL", "anthropic/claude-haiku-4-5")
+TIER3_MODEL = os.getenv("TIER3_MODEL", "anthropic/claude-opus-5")
 
 # litellm prices Tiers 2 and 3 for us. It does not know about Jev, so triage
 # is priced here. SET THESE from the TypeSafe console before going live --
@@ -499,7 +499,7 @@ async def _run_gatherer(
             model=TIER2_MODEL,
             messages=messages,
             tools=[search_tool],
-            temperature=0.3,
+            **sampling_kwargs(TIER2_MODEL, 0.3),
             max_tokens=900,
         )
         costs.append(_cost_of(first, "gather", TIER2_MODEL))
@@ -522,7 +522,7 @@ async def _run_gatherer(
             second = await acompletion(
                 model=TIER2_MODEL,
                 messages=messages,
-                temperature=0.3,
+                **sampling_kwargs(TIER2_MODEL, 0.3),
                 max_tokens=900,
             )
             costs.append(_cost_of(second, "gather", TIER2_MODEL))
@@ -597,7 +597,7 @@ async def _synthesize(
                 {"role": "system", "content": _SYNTH_SYSTEM},
                 {"role": "user", "content": json.dumps(payload, default=str)},
             ],
-            temperature=0.1,
+            **sampling_kwargs(TIER3_MODEL, 0.1),
             max_tokens=1200,
         )
         costs.append(_cost_of(resp, "synthesize", TIER3_MODEL))
@@ -901,6 +901,28 @@ def _loads_loose(raw: str | None) -> dict[str, Any]:
     if start == -1 or end == -1:
         raise json.JSONDecodeError("no JSON object found", s, 0)
     return json.loads(s[start : end + 1])
+
+
+def sampling_kwargs(model: str, temperature: float) -> dict[str, float]:
+    """
+    `temperature` where the model still accepts it, nothing where it does not.
+
+    Anthropic removed the sampling parameters on Claude 4.6 and later:
+    Opus 5, Sonnet 5, Opus 4.8/4.7 and the Fable family return a **400** if
+    `temperature`, `top_p` or `top_k` is present. Haiku 4.5 and older models
+    still take them, as do the OpenAI and Gemini models.
+
+    litellm passes the parameter straight through, so this is not something
+    the router absorbs -- an unguarded temperature turns every Tier 2/3 call
+    into a hard failure the moment the model is switched to Claude.
+    """
+    m = model.lower()
+    if "claude" in m or "anthropic" in m:
+        no_sampling = ("opus-5", "opus-4-8", "opus-4-7", "sonnet-5",
+                       "fable", "mythos")
+        if any(tag in m for tag in no_sampling):
+            return {}
+    return {"temperature": temperature}
 
 
 def _cost_of(resp: Any, stage: str, model: str) -> StageCost:
