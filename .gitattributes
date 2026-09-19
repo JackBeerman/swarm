@@ -1,0 +1,4 @@
+# Keep LF in the repo and in the working tree. A CRLF Makefile breaks make,
+# and CRLF .env lines end up with a trailing \r inside the value.
+* text=auto eol=lf
+*.db binary

@@ -1,0 +1,13 @@
+# Runtime
+polymarket-us==0.1.2      # Polymarket US SDK (pin: 0.1.x is beta, API may move)
+litellm>=1.101.0          # Tier 2/3 routing + cost accounting
+httpx>=0.28.0             # Jev client (raw HTTP, not the experimental middleware)
+pydantic>=2.9.0           # tier contracts
+python-dotenv>=1.0.0      # loads .env
+
+# Dev
+pytest>=8.0.0
+pytest-asyncio>=1.0.0
+respx>=0.22.0             # mocks httpx at the transport layer
+ruff>=0.6.0
+mypy>=1.11.0

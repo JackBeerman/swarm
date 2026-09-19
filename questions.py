@@ -1,0 +1,373 @@
+"""
+questions.py -- every Jev question and every threshold, in one file.
+
+Kept separate on TypeSafe's own advice: questions and thresholds are the
+part a human must actually review, and they should not be scattered through
+application code. Jack: this is the file to edit. The rest of the pipeline
+is plumbing.
+
+Three corrections from the TypeSafe build guide, all of which changed the
+design materially:
+
+1. DETERMINISTIC WORK BELONGS IN CODE. The first draft asked Jev
+   "is the bid-ask spread tight enough to trade?" -- but spread, depth,
+   volume and time-to-close are arithmetic. They are now computed in
+   structural_filter() below and never sent to a model. Paying an LLM to
+   compare two floats is the exact anti-pattern the guide opens with.
+
+2. DO NOT ASK THE MODEL ABOUT THINGS IT CANNOT SEE. The first draft asked
+   "does a fresh catalyst explain this price move?" while supplying no
+   news. Jev could only answer from weights, which the guide explicitly
+   warns against. Catalyst questions are removed from Tier 1 entirely;
+   they belong at Tier 2, where a gatherer has actually searched. What
+   Tier 1 can legitimately judge is the market's *structure* -- is this
+   resolvable, objective, and researchable at all.
+
+3. DECOMPOSE. The guide calls this the most important idea in it. Broad
+   questions hide several judgments behind one number. Each question below
+   evaluates exactly one property, uses structured instructions rather
+   than dense prose, and points at a specific state path in backticks.
+
+Output tokens are free and input is $0.042/M, so asking twelve questions
+instead of five costs fractions of a cent. There is no reason to be
+stingy here.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+# ==========================================================================
+# Structural filters -- pure arithmetic, no model call
+# ==========================================================================
+
+@dataclass(frozen=True)
+class StructuralLimits:
+    min_volume_usd: float = 50_000.0
+    min_liquidity_usd: float = 10_000.0
+    max_spread: float = 0.04
+    min_depth_shares: int = 200
+    min_hours_to_close: float = 6.0       # no time for research to pay off
+    max_days_to_close: float = 120.0      # capital parked too long
+    min_price: float = 0.05               # avoid lottery-ticket tails
+    max_price: float = 0.95
+
+
+def structural_filter(
+    state: dict[str, Any], limits: StructuralLimits = StructuralLimits()
+) -> str | None:
+    """
+    Reject on measurable facts before spending anything at all.
+
+    Returns a rejection reason, or None if the market passes. Runs before
+    the Jev call, not after -- a market with a 12-cent spread is
+    untradeable regardless of how interesting it is, and that judgment
+    costs zero.
+    """
+    bid, ask = state.get("best_bid"), state.get("best_ask")
+    if bid is None or ask is None:
+        return "no_quote"
+    if not (0 < bid < ask < 1):
+        return f"crossed_or_invalid_book bid={bid} ask={ask}"
+
+    spread = ask - bid
+    if spread > limits.max_spread:
+        return f"spread={spread:.3f} > {limits.max_spread}"
+
+    mid = (bid + ask) / 2
+    if not (limits.min_price <= mid <= limits.max_price):
+        return f"mid={mid:.3f} outside [{limits.min_price}, {limits.max_price}]"
+
+    vol = state.get("volume_usd") or 0
+    if vol < limits.min_volume_usd:
+        return f"volume={vol:.0f} < {limits.min_volume_usd:.0f}"
+
+    liq = state.get("liquidity_usd") or 0
+    if liq < limits.min_liquidity_usd:
+        return f"liquidity={liq:.0f} < {limits.min_liquidity_usd:.0f}"
+
+    for side in ("bid_depth", "ask_depth"):
+        d = state.get(side)
+        if d is not None and d < limits.min_depth_shares:
+            return f"{side}={d} < {limits.min_depth_shares}"
+
+    hrs = state.get("hours_to_close")
+    if hrs is not None:
+        if hrs < limits.min_hours_to_close:
+            return f"closes in {hrs:.1f}h, too soon to research"
+        if hrs > limits.max_days_to_close * 24:
+            return f"closes in {hrs / 24:.0f}d, capital parked too long"
+
+    return None
+
+
+# ==========================================================================
+# Tier 1 questions -- judgment over unstructured text only
+# ==========================================================================
+#
+# Every question below is answerable from the market's own description and
+# title. None of them require news, prices, or outside knowledge.
+
+RESTRICTED_QUESTIONS: dict[str, dict[str, Any]] = {
+    # Decomposed from one broad "restricted_domain" question. Each names a
+    # distinct way a market could fall in a domain the operator does not
+    # trade on. Any one of them firing is disqualifying.
+    "federal_policy_outcome": {
+        "type": "noul",
+        "instructions": {
+            "question": (
+                "Does resolution depend on a decision, action, or "
+                "announcement by the US federal government?"
+            ),
+            "inspect": "`question` and `description`",
+            "focus": (
+                "Federal agencies, regulators, Congress, the White House, "
+                "or federal courts deciding the outcome."
+            ),
+        },
+        "criteria": {
+            "true": {
+                "what": "A federal body's action determines resolution",
+                "examples": [
+                    "Will the FDA approve X by December?",
+                    "Will Congress pass the appropriations bill?",
+                    "Will the SEC approve a spot ETF?",
+                ],
+            },
+            "false": {
+                "what": "Resolution is independent of federal action",
+                "not_for": "Markets merely mentioning the US in passing",
+                "examples": [
+                    "Will Bitcoin close above $120k?",
+                    "Will Film X win Best Picture?",
+                ],
+            },
+        },
+    },
+    "defense_or_military": {
+        "type": "noul",
+        "instructions": {
+            "question": (
+                "Does this market concern defense, the military, "
+                "intelligence, or an armed conflict?"
+            ),
+            "inspect": "`question`, `description` and `tags`",
+            "focus": (
+                "Armed forces of any nation, defense procurement or budgets, "
+                "intelligence services, active or threatened hostilities."
+            ),
+        },
+        "criteria": {
+            "true": {
+                "what": "Military, intelligence, or armed conflict outcomes",
+                "examples": [
+                    "Will there be a ceasefire in X by March?",
+                    "Will country Y conduct a missile test this quarter?",
+                    "Will the defense budget exceed $900B?",
+                ],
+            },
+            "false": {
+                "what": "No military, intelligence, or conflict dimension",
+                "examples": ["Will the Fed cut rates?", "Who wins the league?"],
+            },
+        },
+    },
+    "us_election_or_appointment": {
+        "type": "noul",
+        "instructions": {
+            "question": (
+                "Does resolution depend on a US election, nomination, "
+                "confirmation, or officeholder's tenure?"
+            ),
+            "inspect": "`question` and `description`",
+        },
+        "criteria": {
+            "true": {
+                "what": "US electoral or appointment outcomes at any level",
+                "examples": [
+                    "Who wins the 2028 Republican nomination?",
+                    "Will Secretary X leave office before June?",
+                ],
+            },
+            "false": {
+                "what": "No US election or appointment dimension",
+                "not_for": "Elections in other countries",
+                "examples": ["Will the UK call a snap election?"],
+            },
+        },
+    },
+}
+
+TRACTABILITY_QUESTIONS: dict[str, dict[str, Any]] = {
+    # Decomposed from one broad "tractability" score. Each isolates one
+    # reason a market might or might not reward research.
+    "objective_resolution": {
+        "type": "noul",
+        "instructions": {
+            "question": (
+                "Is the resolution condition objective enough that two "
+                "careful readers would agree on the outcome?"
+            ),
+            "inspect": "`description`",
+            "focus": (
+                "A named, checkable source or an unambiguous numeric "
+                "threshold, rather than a judgment call."
+            ),
+        },
+        "criteria": {
+            "true": {
+                "what": "Names a specific source or a precise threshold",
+                "examples": [
+                    "Per the official BLS release",
+                    "Closing price above $100 on Dec 31",
+                ],
+            },
+            "false": {
+                "what": "Requires subjective interpretation to settle",
+                "examples": [
+                    "Will the policy be considered a success?",
+                    "Will the relationship deteriorate significantly?",
+                ],
+            },
+        },
+    },
+    "self_contained": {
+        "type": "noul",
+        "instructions": {
+            "question": (
+                "Can the resolution condition be understood entirely from "
+                "the supplied text, without outside context?"
+            ),
+            "compare": ["`question`", "`description`"],
+            "focus": (
+                "Undefined terms, unstated baselines, or references to "
+                "external documents make this false."
+            ),
+        },
+        "criteria": {
+            "true": {"what": "Fully specified in the text provided"},
+            "false": {
+                "what": "Depends on definitions or documents not included",
+                "examples": ["Will the agreed targets be met?"],
+            },
+        },
+    },
+    "research_would_help": {
+        "type": "score",
+        "instructions": {
+            "question": (
+                "How much could careful public-source research improve an "
+                "estimate of this outcome beyond an uninformed guess?"
+            ),
+            "inspect": "`question` and `description`",
+            "focus": (
+                "Judge whether relevant evidence plausibly EXISTS in public "
+                "sources. Do not judge whether the market has already "
+                "priced it -- that is a separate question."
+            ),
+        },
+        "criteria": [
+            {
+                "what": "Nothing to find; outcome is irreducibly uncertain",
+                "signals": [
+                    "Coin-flip or near-random",
+                    "Depends on one person's undisclosed private decision",
+                    "Live sporting event in progress",
+                ],
+            },
+            {
+                "what": "Some public evidence exists but is thin or indirect",
+                "signals": ["Sparse reporting", "Only loosely related precedent"],
+            },
+            {
+                "what": "Substantial checkable public evidence plausibly exists",
+                "signals": [
+                    "Published statistics or filings bear directly on it",
+                    "A clear historical reference class exists",
+                    "Scheduled disclosures precede resolution",
+                ],
+            },
+        ],
+    },
+    "outcome_type": {
+        "type": "choice",
+        "instructions": {
+            "question": "What kind of process determines this outcome?",
+            "focus": "Classify the generating process, not the topic.",
+        },
+        "criteria": {
+            "scheduled_disclosure": {
+                "what": "A dated release, report, filing, or official decision",
+                "not_for": "Ongoing continuous measures",
+                "examples": ["FOMC decision", "quarterly earnings", "CPI print"],
+            },
+            "continuous_metric": {
+                "what": "A price, index, or count crossing a threshold",
+                "not_for": "One-off announcements",
+                "examples": ["BTC above $120k", "temperature record"],
+            },
+            "contested_event": {
+                "what": "A competition or adversarial process",
+                "examples": ["sports result", "award show", "election"],
+            },
+            "discretionary_action": {
+                "what": "An individual or firm choosing to act",
+                "examples": ["Will CEO X resign?", "Will Y announce a merger?"],
+            },
+        },
+    },
+}
+
+ALL_TIER1_QUESTIONS: dict[str, dict[str, Any]] = {
+    **RESTRICTED_QUESTIONS,
+    **TRACTABILITY_QUESTIONS,
+}
+
+
+# ==========================================================================
+# Thresholds
+# ==========================================================================
+
+@dataclass(frozen=True)
+class GateThresholds:
+    """
+    The reviewable constants. Every number here is currently a guess and
+    must be calibrated against shadow data before it means anything.
+    """
+
+    # --- hard veto --------------------------------------------------
+    # Applied to the MAXIMUM of the three restricted questions, not their
+    # average: these are alternative routes to the same problem, and one
+    # firing is enough. Averaging would let two clean answers dilute one
+    # alarming one, which is precisely the wrong behaviour here.
+    max_restricted: float = 0.12
+
+    # --- disqualifying floors ---------------------------------------
+    floor_objective_resolution: float = 0.45
+    floor_research_would_help: float = 0.60     # on the 0-2 scale
+
+    # --- the composite gate -----------------------------------------
+    min_gate_score: float = 0.60
+
+    w_research_would_help: float = 0.45
+    w_objective_resolution: float = 0.30
+    w_self_contained: float = 0.25
+
+    # Outcome types that historically reward research, applied as a
+    # multiplier on the composite rather than a filter. A contested event
+    # is not disqualifying -- it is simply a harder place to find edge.
+    outcome_type_multiplier: dict[str, float] = None  # set in __post_init__
+
+    def __post_init__(self) -> None:
+        if self.outcome_type_multiplier is None:
+            object.__setattr__(
+                self,
+                "outcome_type_multiplier",
+                {
+                    "scheduled_disclosure": 1.00,
+                    "discretionary_action": 0.85,
+                    "continuous_metric": 0.80,
+                    "contested_event": 0.60,
+                },
+            )

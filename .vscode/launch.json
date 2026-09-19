@@ -1,0 +1,54 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Shadow: collect verdicts",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/shadow.py",
+      "args": ["--collect", "--limit", "200"],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Shadow: analyze",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/shadow.py",
+      "args": ["--analyze"],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Shadow: sweep gate threshold",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/shadow.py",
+      "args": ["--sweep", "gate_score"],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Daemon: one cycle (shadow)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/daemon.py",
+      "args": ["--once"],
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "SWARM_MODE": "shadow", "LOG_LEVEL": "DEBUG" },
+      "justMyCode": false
+    },
+    {
+      "name": "Daemon: PAPER (no orders placed)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/daemon.py",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "SWARM_MODE": "paper" },
+      "justMyCode": false
+    }
+  ]
+}
