@@ -201,6 +201,11 @@ class JevTriage:
             "spread": None if (bid is None or ask is None) else round(ask - bid, 4),
             "bid_depth": bbo.get("bid_depth"),
             "ask_depth": bbo.get("ask_depth"),
+            # Share quantities. structural_filter gates on these; the
+            # *_depth fields above are book-level counts and are kept only
+            # for the record.
+            "bid_shares": bbo.get("bid_shares"),
+            "ask_shares": bbo.get("ask_shares"),
             # The API sends no volume or liquidity field, so these are
             # derived from the quote's share counts. See
             # adapters.derive_notionals.

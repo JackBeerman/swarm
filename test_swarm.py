@@ -662,7 +662,13 @@ async def test_thin_volume_rejected_without_calling_jev():
         return_value=httpx.Response(200, json=jev_body())
     )
     jev = sw.JevTriage(api_key="k")
-    v = await jev.evaluate({**MARKET, "volume_usd": 900.0}, BBO)
+    # Derived from the limit rather than hardcoded: this test guards that
+    # thin volume short-circuits the model call, not any particular floor.
+    # It previously asserted $900 was thin, which silently stopped testing
+    # anything when the floor moved from 50,000 to 250.
+    thin = sw.StructuralLimits().min_volume_usd - 1
+    v = await jev.evaluate({**MARKET, "volume_usd": thin}, BBO)
+    assert v.structural_reject is not None
     assert "volume" in v.structural_reject
     assert route.call_count == 0
     await jev.aclose()

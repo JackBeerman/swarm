@@ -44,10 +44,23 @@ from typing import Any
 
 @dataclass(frozen=True)
 class StructuralLimits:
-    min_volume_usd: float = 50_000.0
-    min_liquidity_usd: float = 10_000.0
-    max_spread: float = 0.04
-    min_depth_shares: int = 200
+    # Calibrated against 176 quoted live markets (2026-09-19), sampled from
+    # ~10,800 open. The previous values were tuned on synthetic data and
+    # passed 0 of 176 jointly. Polymarket US markets are small: median
+    # traded notional $34, median ask-side depth $5,875.
+    #
+    # These floors are a "is this market real" test, NOT a tradability
+    # test. On a $100 treasury tradability never binds -- only 2 of 176
+    # markets could not absorb a $10 position. Spend is controlled by the
+    # escalation budget, not here.
+    min_volume_usd: float = 250.0         # 50k passed 0.6% alone
+    min_liquidity_usd: float = 100.0      # 10k passed 1.7% alone
+    max_spread: float = 0.04              # passes 77%; unchanged
+    # Compared against bid_shares/ask_shares (a share count), NOT
+    # bid_depth/ask_depth, which are counts of book levels and run 1-16.
+    # Non-binding on current data: 200 and 5,000 give identical joint
+    # results. Kept as a guard against an empty book.
+    min_depth_shares: int = 500
     min_hours_to_close: float = 6.0       # no time for research to pay off
     max_days_to_close: float = 120.0      # capital parked too long
     min_price: float = 0.05               # avoid lottery-ticket tails
@@ -87,10 +100,14 @@ def structural_filter(
     if liq < limits.min_liquidity_usd:
         return f"liquidity={liq:.0f} < {limits.min_liquidity_usd:.0f}"
 
-    for side in ("bid_depth", "ask_depth"):
+    # bid_shares/ask_shares, not bid_depth/ask_depth. The latter count book
+    # LEVELS (observed range 1-16) and comparing them to a share floor of
+    # 200 rejected 100% of live markets -- invisibly, because the volume
+    # check above returned first.
+    for side in ("bid_shares", "ask_shares"):
         d = state.get(side)
         if d is not None and d < limits.min_depth_shares:
-            return f"{side}={d} < {limits.min_depth_shares}"
+            return f"{side}={d:,.0f} < {limits.min_depth_shares:,}"
 
     hrs = state.get("hours_to_close")
     if hrs is not None:
