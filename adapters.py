@@ -48,9 +48,13 @@ Two consequences worth internalizing:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 from collections import deque
 from typing import Any, Deque
+
+log = logging.getLogger("adapters")
 
 
 def amount(a: Any) -> float | None:
@@ -203,6 +207,158 @@ def iter_event_markets(
                 continue
             out.append((m, ev))
     return out
+
+
+# Sampling across these instead of taking the default listing page. The
+# default page is ~half sports, and sports markets are uniformly
+# `contested_event`: a first calibration sweep triaged 33 markets and all
+# 33 were that one type, with gate scores spanning 0.38-0.48. A threshold
+# sweep over that sample is a cliff, not a curve, and tuning against it
+# would tune the gate to baseball.
+DEFAULT_TAG_MIX = (
+    "economics", "business", "crypto", "culture", "science",
+    "politics", "sports",
+)
+
+
+async def fetch_events_across_tags(
+    pm: Any,
+    tags: "tuple[str, ...] | list[str]" = DEFAULT_TAG_MIX,
+    per_tag: int = 10,
+    pause: float = 1.0,
+) -> list[dict[str, Any]]:
+    """
+    One events.list per tag, de-duplicated by event slug.
+
+    `tagSlug` is a real filter on this gateway (verified: economics,
+    crypto, culture and sports each return disjoint event sets). Without
+    it the sample composition is whatever the exchange happens to list
+    first, which is not a choice anyone made.
+
+    A failing tag is skipped rather than fatal: partial coverage beats no
+    sweep, and tag slugs may change.
+    """
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for tag in tags:
+        try:
+            page = await pm.events.list(
+                {"limit": per_tag, "closed": False, "tagSlug": tag}
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("tag %s failed, skipping: %s", tag, exc)
+            continue
+        for ev in page.get("events", []) or []:
+            slug = ev.get("slug")
+            if slug and slug in seen:
+                continue
+            if slug:
+                seen.add(slug)
+            out.append(ev)
+        await asyncio.sleep(pause)
+    return out
+
+
+def interleave_by_event(
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """
+    Round-robin the markets across their parent events.
+
+    Events flatten into long runs of near-identical legs -- one event can
+    contribute 30 markets that differ only by which team is named. Taking
+    the head of that list gives a sweep that is entirely one sport, which
+    is worse than a small sample: it is a biased one, and thresholds tuned
+    on it would be tuned to a single market type.
+
+    Taking one market per event per round gives the same count with
+    coverage across events.
+    """
+    by_event: dict[str, list] = {}
+    for m, ev in pairs:
+        by_event.setdefault(ev.get("slug") or id(ev), []).append((m, ev))
+    out = []
+    rounds = max((len(v) for v in by_event.values()), default=0)
+    for i in range(rounds):
+        for bucket in by_event.values():
+            if i < len(bucket):
+                out.append(bucket[i])
+    return out
+
+
+# --------------------------------------------------------------------------
+# paced access to the quote endpoint
+# --------------------------------------------------------------------------
+
+class QuoteFetcher:
+    """
+    Rate-limited, retrying wrapper around `markets.bbo`.
+
+    Volume and liquidity are derived from the quote, so the structural
+    filter needs one request per candidate market -- roughly 1,100 per
+    sweep at the current floors. That is not optional and it is not
+    cheap in requests.
+
+    Unpaced, this gets Cloudflare-blocked at around 25 rapid calls and
+    returns an HTML error page rather than JSON. A collector at 2
+    concurrent with 1.2s spacing still lost ~30% of a sample, so treat
+    failures as expected and retry them rather than dropping the market.
+
+    Pacing is global, not per-task: a semaphore alone bounds concurrency
+    but still lets N tasks fire simultaneously the moment one frees up.
+    """
+
+    def __init__(
+        self,
+        pm: Any,
+        concurrency: int = 2,
+        min_interval: float = 1.2,
+        max_retries: int = 3,
+        backoff_base: float = 1.5,
+    ):
+        self._pm = pm
+        self._sem = asyncio.Semaphore(concurrency)
+        self._min_interval = min_interval
+        self._max_retries = max_retries
+        self._backoff_base = backoff_base
+        self._lock = asyncio.Lock()
+        self._next_at = 0.0
+        self.attempts = 0
+        self.failures = 0
+
+    async def _pace(self) -> None:
+        """Hold the floor between request starts, across all tasks."""
+        async with self._lock:
+            now = time.monotonic()
+            wait = self._next_at - now
+            if wait > 0:
+                await asyncio.sleep(wait)
+                now = time.monotonic()
+            self._next_at = now + self._min_interval
+
+    async def bbo(self, slug: str) -> dict[str, Any] | None:
+        """Normalized quote, or None once retries are exhausted."""
+        for attempt in range(self._max_retries + 1):
+            async with self._sem:
+                await self._pace()
+                self.attempts += 1
+                try:
+                    raw = await self._pm.markets.bbo(slug)
+                except Exception as exc:  # noqa: BLE001 - transport or HTML
+                    if attempt == self._max_retries:
+                        self.failures += 1
+                        log.debug("bbo %s failed after %d attempts: %s",
+                                  slug, attempt + 1, exc)
+                        return None
+                else:
+                    return normalize_bbo(raw)
+            await asyncio.sleep(self._backoff_base * (2 ** attempt))
+        return None
+
+    def report(self) -> str:
+        ok = self.attempts - self.failures
+        return (f"quotes: {ok}/{self.attempts} requests succeeded, "
+                f"{self.failures} markets dropped")
 
 
 # --------------------------------------------------------------------------

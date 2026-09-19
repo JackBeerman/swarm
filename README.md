@@ -52,14 +52,30 @@ not something you can fat-finger from a dropdown.
 **1. Calibrate the gate (days, costs cents).**
 
 ```bash
-python shadow.py --collect --limit 200
+python shadow.py --collect --limit 200    # --limit is MARKETS, not events
 python shadow.py --analyze
 python shadow.py --sweep gate_score
 ```
 
+Run `--collect` repeatedly over days. A 20h cooldown means a market is
+triaged once per run rather than every time, so repeated sweeps widen the
+sample instead of re-asking the same question.
+
+Events are sampled across tags (`economics`, `crypto`, `culture`,
+`politics`, `sports`, …), not taken from the default listing page. That
+page is roughly half sports, and sports markets are uniformly
+`contested_event`: a sweep drawn from it returned 33 markets that were
+all one outcome type, with gate scores spanning 0.38–0.48. Sweeping a
+threshold over that produces a cliff, not a curve, and would tune the
+gate to baseball.
+
+Quote requests are paced at 2 concurrent with 1.2s spacing. That is not
+conservatism — the volume floor needs a quote per market, and faster
+settings get Cloudflare-blocked and return HTML instead of JSON.
+
 Target a 3–6% escalation rate. Set `min_gate_score` in `questions.py`
-from the sweep. The shipped default is tuned against *synthetic* data and
-means nothing until you do this.
+from the sweep. The shipped default is a guess and means nothing until
+you do this on a sample large enough to trust.
 
 **2. Paper trade (weeks).**
 

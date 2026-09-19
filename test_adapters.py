@@ -11,7 +11,9 @@ those stubs; it passed while the adapter returned None for every quote.
 
 from __future__ import annotations
 
+import asyncio
 import os
+import time
 
 import pytest
 
@@ -21,6 +23,7 @@ from adapters import (  # noqa: E402
     PriceTracker,
     amount,
     derive_notionals,
+    interleave_by_event,
     iter_event_markets,
     normalize_bbo,
     normalize_market,
@@ -312,3 +315,95 @@ def test_tracker_prune():
     t.observe("b", 0.5)
     t.prune({"a"})
     assert "a" in t._series and "b" not in t._series
+
+
+# --------------------------------------------------------------------------
+# QuoteFetcher -- the sweep makes one request per market, so pacing is not
+# optional. Unpaced, the gateway returns an HTML block page, not JSON.
+# --------------------------------------------------------------------------
+
+class _FakeMarkets:
+    def __init__(self, fail_times=0, exc=RuntimeError("429")):
+        self.calls = 0
+        self.starts: list[float] = []
+        self._fail_times = fail_times
+        self._exc = exc
+
+    async def bbo(self, slug):
+        self.calls += 1
+        self.starts.append(time.monotonic())
+        if self.calls <= self._fail_times:
+            raise self._exc
+        return dict(RAW_BBO)
+
+
+class _FakePM:
+    def __init__(self, **kw):
+        self.markets = _FakeMarkets(**kw)
+
+
+@pytest.mark.asyncio
+async def test_quote_fetcher_normalizes_and_counts():
+    from adapters import QuoteFetcher
+    pm = _FakePM()
+    q = QuoteFetcher(pm, concurrency=2, min_interval=0.0)
+    bbo = await q.bbo("x")
+    assert bbo["bid"] == 0.53, "must return a NORMALIZED quote"
+    assert q.attempts == 1 and q.failures == 0
+
+
+@pytest.mark.asyncio
+async def test_quote_fetcher_retries_then_succeeds():
+    from adapters import QuoteFetcher
+    pm = _FakePM(fail_times=2)
+    q = QuoteFetcher(pm, concurrency=1, min_interval=0.0, backoff_base=0.0)
+    bbo = await q.bbo("x")
+    assert bbo is not None, "a transient block must not drop the market"
+    assert pm.markets.calls == 3
+
+
+@pytest.mark.asyncio
+async def test_quote_fetcher_gives_up_and_reports():
+    from adapters import QuoteFetcher
+    pm = _FakePM(fail_times=99)
+    q = QuoteFetcher(pm, concurrency=1, min_interval=0.0, max_retries=2,
+                     backoff_base=0.0)
+    assert await q.bbo("x") is None
+    assert q.failures == 1
+    assert "dropped" in q.report()
+
+
+@pytest.mark.asyncio
+async def test_quote_fetcher_paces_globally_not_just_per_task():
+    """
+    A semaphore alone bounds concurrency but lets N tasks fire the instant
+    one frees up. The floor is between request STARTS, across all tasks.
+    """
+    from adapters import QuoteFetcher
+    pm = _FakePM()
+    q = QuoteFetcher(pm, concurrency=4, min_interval=0.05)
+    await asyncio.gather(*(q.bbo(f"m{i}") for i in range(4)))
+    gaps = [b - a for a, b in zip(pm.markets.starts, pm.markets.starts[1:])]
+    assert all(g >= 0.04 for g in gaps), f"requests not paced: {gaps}"
+
+
+def test_interleave_spreads_markets_across_events():
+    """
+    A first live sweep took 40 markets and every one was MLB: events
+    flatten into long runs of near-identical legs, so the head of the list
+    is one event's teams. Thresholds tuned on that are tuned to one sport.
+    """
+    ev_a = {"slug": "a", "markets": []}
+    ev_b = {"slug": "b", "markets": []}
+    ev_c = {"slug": "c", "markets": []}
+    pairs = (
+        [({"slug": f"a{i}"}, ev_a) for i in range(30)]
+        + [({"slug": f"b{i}"}, ev_b) for i in range(3)]
+        + [({"slug": f"c{i}"}, ev_c) for i in range(2)]
+    )
+    assert len({e["slug"] for _, e in pairs[:5]}) == 1, "precondition"
+
+    out = interleave_by_event(pairs)
+    assert len(out) == len(pairs), "interleaving must not drop markets"
+    assert {e["slug"] for _, e in out[:3]} == {"a", "b", "c"}
+    assert len({m["slug"] for m, _ in out}) == len(pairs), "no duplicates"

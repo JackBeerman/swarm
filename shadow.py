@@ -28,12 +28,19 @@ import os
 import sqlite3
 import statistics
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from polymarket_us import AsyncPolymarketUS
 
-from adapters import PriceTracker, iter_event_markets, normalize_bbo, normalize_market
+from adapters import (
+    PriceTracker,
+    QuoteFetcher,
+    fetch_events_across_tags,
+    interleave_by_event,
+    iter_event_markets,
+    normalize_market,
+)
 from schemas import TriageVerdict
 from questions import GateThresholds, StructuralLimits
 from swarm import JevTriage, apply_gate, price_triage
@@ -96,6 +103,25 @@ def connect(path: str = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
+def recently_seen(conn: sqlite3.Connection, hours: float) -> set[str]:
+    """
+    Slugs triaged within the last `hours`.
+
+    Without this, every sweep re-triages the same markets. At the daemon's
+    300s poll that is 288 evaluations per market per day -- the same
+    market, the same description, the same answer, 288 times. Triage is
+    cheap per call and ruinous in aggregate.
+    """
+    if hours <= 0:
+        return set()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    rows = conn.execute(
+        "SELECT DISTINCT market_slug FROM verdicts WHERE seen_at >= ?",
+        (cutoff,),
+    ).fetchall()
+    return {r["market_slug"] for r in rows}
+
+
 def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -> None:
     bid, ask = bbo.get("bid"), bbo.get("ask")
     conn.execute(
@@ -142,33 +168,57 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
 # --------------------------------------------------------------------------
 
 async def collect(
-    min_volume: float = 50_000.0,
+    min_volume: float = 250.0,
     limit: int = 200,
-    concurrency: int = 4,
+    concurrency: int = 2,
+    events: int = 50,
+    cooldown_hours: float = 20.0,
 ) -> None:
-    """One sweep over active markets. Triage only. No orders, no Tier 2/3."""
+    """
+    One sweep. Triage only. No orders, no Tier 2/3.
+
+    `limit` bounds MARKETS, not events. It previously went straight to
+    events.list, where a value of 200 meant 200 events -- and 50 events
+    already flatten to ~10,800 markets, so the documented `--limit 200`
+    would have attempted tens of thousands of quote requests.
+    """
     conn = connect()
     jev = JevTriage()
     tracker = PriceTracker()
-    sem = asyncio.Semaphore(concurrency)
     gate = GateThresholds()
-    # --min-volume now overrides the structural floor rather than a query
+    # --min-volume overrides the structural floor rather than a query
     # parameter the gateway ignores. Volume is derived from the quote, so
     # it cannot be applied before the bbo fetch.
     limits = StructuralLimits(min_volume_usd=min_volume)
     seen = skipped = 0
+
+    skip = recently_seen(conn, cooldown_hours)
+    if skip:
+        log.info("cooldown: %d markets triaged in the last %.0fh will be "
+                 "skipped", len(skip), cooldown_hours)
 
     async with AsyncPolymarketUS() as pm:  # public endpoints, no auth needed
         # Collect via EVENTS, not markets.list: closes_at and tags live on
         # the event, and both change how triage should read a price level.
         # `closed: False` is what selects open markets. `active: True`
         # does NOT -- it returns resolved markets, which stay active=True.
-        # `volumeMin` is accepted by the gateway and silently ignored, so
-        # the volume floor is applied later, in structural_filter().
-        page = await pm.events.list({"limit": limit, "closed": False})
-        pairs = iter_event_markets(page)
-        log.info("fetched %d events -> %d candidate markets",
-                 len(page.get("events", [])), len(pairs))
+        # Sample across tags rather than taking the default listing page,
+        # which is ~half sports. Every market in the first calibration
+        # sweep came back `contested_event`, which makes a threshold
+        # sweep a cliff rather than a curve.
+        evs = await fetch_events_across_tags(pm, per_tag=max(1, events // 7))
+        pairs = iter_event_markets({"events": evs})
+        total = len(pairs)
+        # Interleave before truncating. Events flatten into long runs of
+        # near-identical legs, so the head of the list is one sport --
+        # a first sweep took 40 markets and every one was MLB.
+        pairs = interleave_by_event(
+            [p for p in pairs if p[0].get("slug") not in skip]
+        )[:limit]
+        log.info("%d events across tags -> %d open markets -> %d this sweep",
+                 len(evs), total, len(pairs))
+
+        quotes = QuoteFetcher(pm, concurrency=concurrency)
 
         async def one(market: dict[str, Any], event: dict[str, Any]) -> None:
             nonlocal seen, skipped
@@ -176,26 +226,28 @@ async def collect(
             if not slug:
                 skipped += 1
                 return
-            async with sem:
-                try:
-                    bbo = normalize_bbo(await pm.markets.bbo(slug))
-                    if bbo["bid"] is None or bbo["ask"] is None:
-                        skipped += 1
-                        return
-                    tracker.observe(slug, (bbo["bid"] + bbo["ask"]) / 2.0)
-                    norm = normalize_market(market, event)
-                    v = await jev.evaluate(norm, bbo, gate, tracker, limits)
-                except Exception as exc:
-                    log.warning("triage failed on %s: %s", slug, exc)
-                    return
-                store(conn, v, norm, bbo)
-                seen += 1
-                flag = "ESCALATE" if v.escalate else "-"
-                log.info("%-8s %-45s %s", flag, slug[:45], v.veto_reason or "")
+            bbo = await quotes.bbo(slug)
+            if bbo is None or bbo["bid"] is None or bbo["ask"] is None:
+                skipped += 1
+                return
+            try:
+                tracker.observe(slug, (bbo["bid"] + bbo["ask"]) / 2.0)
+                norm = normalize_market(market, event)
+                v = await jev.evaluate(norm, bbo, gate, tracker, limits)
+            except Exception as exc:
+                log.warning("triage failed on %s: %s", slug, exc)
+                return
+            store(conn, v, norm, bbo)
+            conn.commit()
+            seen += 1
+            flag = "ESCALATE" if v.escalate else "-"
+            log.info("%-8s %-45s %s", flag, slug[:45], v.veto_reason or "")
 
         await asyncio.gather(*(one(m, e) for m, e in pairs))
+        log.info("%s", quotes.report())
 
     await jev.aclose()
+    conn.commit()
     conn.close()
     log.info("triaged %d markets (%d skipped)", seen, skipped)
 
@@ -351,8 +403,17 @@ def main() -> None:
     ap.add_argument("--collect", action="store_true")
     ap.add_argument("--analyze", action="store_true")
     ap.add_argument("--sweep", metavar="FIELD")
-    ap.add_argument("--min-volume", type=float, default=50_000.0)
-    ap.add_argument("--limit", type=int, default=200)
+    ap.add_argument("--min-volume", type=float,
+                    default=StructuralLimits().min_volume_usd,
+                    help="override the structural volume floor")
+    ap.add_argument("--limit", type=int, default=200,
+                    help="max MARKETS to triage this sweep (not events)")
+    ap.add_argument("--events", type=int, default=50,
+                    help="events to fetch; 50 flattens to ~10,800 markets")
+    ap.add_argument("--concurrency", type=int, default=2,
+                    help="concurrent quote requests; >2 gets rate-limited")
+    ap.add_argument("--cooldown-hours", type=float, default=20.0,
+                    help="skip markets triaged this recently; 0 disables")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -360,7 +421,13 @@ def main() -> None:
     )
 
     if args.collect:
-        asyncio.run(collect(min_volume=args.min_volume, limit=args.limit))
+        asyncio.run(collect(
+            min_volume=args.min_volume,
+            limit=args.limit,
+            concurrency=args.concurrency,
+            events=args.events,
+            cooldown_hours=args.cooldown_hours,
+        ))
     if args.analyze:
         with closing(connect()) as conn:
             analyze(conn)

@@ -19,12 +19,19 @@ import argparse
 import asyncio
 import logging
 import signal
+import time
 import sys
 from typing import Any
 
 from polymarket_us import AsyncPolymarketUS
 
-from adapters import PriceTracker, iter_event_markets, normalize_bbo, normalize_market
+from adapters import (
+    PriceTracker,
+    QuoteFetcher,
+    interleave_by_event,
+    iter_event_markets,
+    normalize_market,
+)
 from config import Config, ConfigError, setup_logging
 from questions import GateThresholds, StructuralLimits
 from risk_engine import CostLedger, KillSwitch, RiskEngine, RiskLimits
@@ -40,12 +47,27 @@ EXIT_CONFIG = 3
 
 class Daemon:
     def __init__(self, cfg: Config, poll_seconds: float = 300.0,
-                 once: bool = False):
+                 once: bool = False,
+                 cooldown_hours: float = 20.0,
+                 markets_per_cycle: int = 150,
+                 events_per_cycle: int = 50,
+                 quote_concurrency: int = 2):
         self.cfg = cfg
         self.poll_seconds = poll_seconds
         self.once = once
+        # A market is re-triaged at most once per cooldown window. Its
+        # description does not change; only its price does, and Tier 1
+        # is deliberately not shown the price.
+        self.cooldown_seconds = cooldown_hours * 3600.0
+        # Hard cap per pass, independent of how many markets exist. Without
+        # it the workload is set by the exchange's listing count rather
+        # than by anything chosen.
+        self.markets_per_cycle = markets_per_cycle
+        self.events_per_cycle = events_per_cycle
+        self.quote_concurrency = quote_concurrency
         self.tracker = PriceTracker()
         self._stop = asyncio.Event()
+        self._last_seen: dict[str, float] = {}
         self.stats = {"triaged": 0, "escalated": 0, "orders": 0, "loops": 0}
 
     def request_stop(self, *_: Any) -> None:
@@ -134,18 +156,44 @@ class Daemon:
         # `active: True` selects RESOLVED markets here -- active and closed
         # are orthogonal on this gateway. `volumeMin` is ignored. The volume
         # floor lives in StructuralLimits and is applied after the quote.
-        page = await pm.events.list({"limit": 100, "closed": False})
+        page = await pm.events.list({"limit": self.events_per_cycle,
+                                     "closed": False})
         pairs = iter_event_markets(page)
-        log.info("cycle %d: %d candidate markets", self.stats["loops"], len(pairs))
+        total = len(pairs)
 
-        for market, event in pairs:
+        # Cooldown. Without it this loop re-triaged every market on every
+        # pass: ~1,488 markets every 300s is 428,544 triage calls a day,
+        # $28.71 at $0.000067 each -- 29% of a $100 treasury, daily, to
+        # re-read descriptions that had not changed. Tier 1 is cheap per
+        # call and ruinous in aggregate; the per-call price is not a
+        # licence to re-ask the same question 288 times.
+        now = time.time()
+        cutoff = now - self.cooldown_seconds
+        self._last_seen = {s: t for s, t in self._last_seen.items() if t > cutoff}
+        # Interleave before truncating, or the cap takes one event's legs
+        # and the cycle sees a single sport.
+        fresh = interleave_by_event(
+            [p for p in pairs if p[0].get("slug") not in self._last_seen]
+        )[:self.markets_per_cycle]
+
+        log.info(
+            "cycle %d: %d open, %d off cooldown, %d this pass",
+            self.stats["loops"], total, total - len(self._last_seen), len(fresh),
+        )
+
+        quotes = QuoteFetcher(pm, concurrency=self.quote_concurrency)
+
+        for market, event in fresh:
             if self._stop.is_set():
                 return
             slug = market.get("slug")
             if not slug:
                 continue
+            bbo = await quotes.bbo(slug)
+            if bbo is None:
+                continue
+            self._last_seen[slug] = time.time()
             try:
-                bbo = normalize_bbo(await pm.markets.bbo(slug))
                 if bbo["bid"] is not None and bbo["ask"] is not None:
                     self.tracker.observe(slug, (bbo["bid"] + bbo["ask"]) / 2)
                 norm = normalize_market(market, event)
@@ -245,6 +293,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--poll", type=float, default=300.0, help="seconds between cycles")
     ap.add_argument("--once", action="store_true", help="run one cycle and exit")
+    ap.add_argument("--cooldown-hours", type=float, default=20.0,
+                    help="do not re-triage a market more often than this")
+    ap.add_argument("--markets-per-cycle", type=int, default=150,
+                    help="hard cap per pass, regardless of how many exist")
+    ap.add_argument("--events-per-cycle", type=int, default=50)
+    ap.add_argument("--quote-concurrency", type=int, default=2,
+                    help="concurrent quote requests; >2 gets rate-limited")
     args = ap.parse_args()
 
     try:
@@ -257,7 +312,15 @@ def main() -> int:
     setup_logging(cfg.log_level)
     log.info("starting\n%s", cfg.describe())
 
-    daemon = Daemon(cfg, poll_seconds=args.poll, once=args.once)
+    daemon = Daemon(
+        cfg,
+        poll_seconds=args.poll,
+        once=args.once,
+        cooldown_hours=args.cooldown_hours,
+        markets_per_cycle=args.markets_per_cycle,
+        events_per_cycle=args.events_per_cycle,
+        quote_concurrency=args.quote_concurrency,
+    )
 
     async def runner() -> int:
         loop = asyncio.get_running_loop()
