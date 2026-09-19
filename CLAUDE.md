@@ -38,18 +38,35 @@ these questions — propose changes, don't apply them unilaterally.
 
 ### polymarket_us SDK (verified against 0.1.2)
 
-The original spec used **legacy CLOB/Gamma field names**. They are wrong:
+An earlier version of this table was read off the SDK's TypedDicts. **Do
+not trust them.** They are `total=False`, so they assert nothing at
+runtime, and they declare three fields the gateway never sends. The table
+below came off live responses (2026-09-19, sample of 10,771 open markets).
+Where the stubs and the wire disagree, the wire wins.
 
-| assumed | actual |
+| stub / spec says | actually on the wire |
 |---|---|
-| `question` | `title` |
-| `volumeNum` | `volume` |
-| `liquidityNum` | `liquidity` |
-| `volumeNumMin` (filter) | `volumeMin` |
-| `endDate` | `endTime`, **on the Event, not the Market** |
-| `resolutionCriteria` | does not exist |
-| `oneHourPriceChange` | does not exist |
-| `bbo["bid"]` | `bbo["bestBid"]["value"]`, a decimal **string** |
+| `volume`, `liquidity` | **do not exist**, on markets or events |
+| `volumeMin` (filter) | accepted and **silently ignored** |
+| `Event["endTime"]` | `endDate`; 0/50 events had `endTime` |
+| `question` → `title` | **both exist, 100%**, and differ |
+| `Market["outcome"]` | does not exist; the leg is `title` |
+| `bbo["bestBid"]` | `bbo["marketData"]["bestBid"]`, a decimal **string** |
+| `resolutionCriteria`, `oneHourPriceChange` | do not exist |
+
+- **`active` and `closed` are orthogonal.** A settled market is
+  `active=True, closed=True, status="MARKET_STATUS_RESOLVED"`. Querying
+  events with `{"active": True}` returns almost nothing but resolved
+  markets — 100/100 in the sample that first caught this. **Filter on
+  `closed: False`.** All three call sites once sent `active: True` and
+  collected zero markets while logging a clean, selective-looking run.
+- **Close time is on the Market**, as `endDate`, and the parent event's
+  `endDate` can be months earlier (event 2026-11-03 vs. leg 2027-02-01).
+  Prefer the market's; that gap *is* the capital-parked check.
+- **Volume and liquidity must be derived.** `adapters.derive_notionals()`
+  multiplies the quote's `sharesTraded` / `openInterest` (share counts, as
+  decimal strings) by mid. It is a proxy, and **the floors in
+  `questions.py` were never tuned against its distribution.**
 
 - `Amount` is `{"value": "0.55", "currency": "USD"}`. Parse at the
   boundary in `adapters.py`; never let the raw string reach sizing.
@@ -63,9 +80,18 @@ The original spec used **legacy CLOB/Gamma field names**. They are wrong:
   from the websocket or `adapters.PriceTracker`.
 
 **Always go through `adapters.normalize_*`.** Raw SDK objects passed to
-`build_state()` produce a state full of `None`, and Jev will return
-confident-looking probabilities about nothing. There is a test asserting
-the broken path stays broken.
+`build_state()` produce a state with no prices and no volume, and Jev will
+return confident-looking probabilities about nothing. Worse than it
+sounds: the raw market *does* carry `question`, so the bad state reads
+like a normal market with a missing quote rather than an obvious blank.
+The prices are the tell. There is a test asserting the broken path stays
+broken.
+
+**A test fixture is not evidence.** The 84 tests that shipped were green
+against fixtures built from the same wrong stubs as the code — mock and
+parser agreed, and neither matched the API. Before trusting any field
+name here, check it against a live response, not against
+`polymarket_us/types/`.
 
 ### Jev / TypeSafe
 

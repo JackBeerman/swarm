@@ -131,10 +131,11 @@ class Daemon:
         if self.cfg.mode != "shadow":
             await engine.check_floors()
 
-        page = await pm.events.list(
-            {"limit": 100, "active": True, "closed": False, "volumeMin": 50_000}
-        )
-        pairs = iter_event_markets(page, min_volume=50_000)
+        # `active: True` selects RESOLVED markets here -- active and closed
+        # are orthogonal on this gateway. `volumeMin` is ignored. The volume
+        # floor lives in StructuralLimits and is applied after the quote.
+        page = await pm.events.list({"limit": 100, "closed": False})
+        pairs = iter_event_markets(page)
         log.info("cycle %d: %d candidate markets", self.stats["loops"], len(pairs))
 
         for market, event in pairs:

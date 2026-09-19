@@ -32,6 +32,7 @@ import httpx
 from litellm import acompletion
 from pydantic import ValidationError
 
+from adapters import derive_notionals
 from questions import (
     ALL_TIER1_QUESTIONS,
     GateThresholds,
@@ -183,6 +184,7 @@ class JevTriage:
         """
         bid, ask = _f(bbo.get("bid")), _f(bbo.get("ask"))
         hours_to_close = _hours_until(market.get("closes_at"))
+        notionals = derive_notionals(bbo)
 
         return {
             "question": market.get("question"),
@@ -199,8 +201,12 @@ class JevTriage:
             "spread": None if (bid is None or ask is None) else round(ask - bid, 4),
             "bid_depth": bbo.get("bid_depth"),
             "ask_depth": bbo.get("ask_depth"),
-            "volume_usd": market.get("volume_usd"),
-            "liquidity_usd": market.get("liquidity_usd"),
+            # The API sends no volume or liquidity field, so these are
+            # derived from the quote's share counts. See
+            # adapters.derive_notionals.
+            "volume_usd": market.get("volume_usd") or notionals["volume_usd"],
+            "liquidity_usd": (market.get("liquidity_usd")
+                              or notionals["liquidity_usd"]),
             "closes_at": market.get("closes_at"),
             "hours_to_close": hours_to_close,
         }

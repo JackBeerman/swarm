@@ -112,20 +112,29 @@ async def check_jev() -> bool:
 async def check_polymarket() -> bool:
     """Public endpoints need no auth, so this works in shadow mode."""
     from polymarket_us import AsyncPolymarketUS
-    from adapters import iter_event_markets, normalize_bbo
+    from adapters import derive_notionals, iter_event_markets, normalize_bbo
     print("\nPolymarket US (public endpoints)")
     try:
         async with AsyncPolymarketUS() as pm:
-            page = await pm.events.list({"limit": 5, "active": True})
+            page = await pm.events.list({"limit": 5, "closed": False})
             pairs = iter_event_markets(page)
             print(f"{OK} {len(page.get('events', []))} events, "
-                  f"{len(pairs)} active markets")
-            if pairs:
-                slug = pairs[0][0]["slug"]
-                bbo = normalize_bbo(await pm.markets.bbo(slug))
-                print(f"{OK} {slug[:40]}: bid={bbo['bid']} ask={bbo['ask']}")
-                if bbo["bid"] is None:
-                    print(f"{WARN} no quote -- adapter may need updating")
+                  f"{len(pairs)} open markets")
+            if not pairs:
+                # Previously this printed [ok] and returned True on zero
+                # markets, so a query that found nothing looked like a pass.
+                print(f"{BAD} no open markets -- the events filter is wrong")
+                return False
+            slug = pairs[0][0]["slug"]
+            bbo = normalize_bbo(await pm.markets.bbo(slug))
+            print(f"{OK} {slug[:40]}: bid={bbo['bid']} ask={bbo['ask']}")
+            if bbo["bid"] is None:
+                print(f"{BAD} quote parsed to None -- normalize_bbo is not "
+                      f"reading the response shape")
+                return False
+            n = derive_notionals(bbo)
+            print(f"{OK} derived     volume=${n['volume_usd']:,.0f} "
+                  f"liquidity=${n['liquidity_usd']:,.0f}")
         return True
     except Exception as exc:
         print(f"{BAD} {type(exc).__name__}: {exc}")

@@ -1,6 +1,12 @@
 """
-Tests for the SDK adapter layer, written against the real polymarket_us
-TypedDict shapes rather than the spec's assumed field names.
+Tests for the SDK adapter layer.
+
+The fixtures below are cut down from responses captured off the live
+gateway on 2026-09-19, NOT from the SDK's TypedDicts. The stubs in
+polymarket_us/types/ are `total=False`, so they assert nothing at runtime,
+and they declare three fields (`volume`, `liquidity`, `endTime`) that the
+gateway never sends. An earlier version of this file was written from
+those stubs; it passed while the adapter returned None for every quote.
 """
 
 from __future__ import annotations
@@ -14,50 +20,78 @@ os.environ.setdefault("TYPESAFE_API_KEY", "test-key")
 from adapters import (  # noqa: E402
     PriceTracker,
     amount,
+    derive_notionals,
     iter_event_markets,
     normalize_bbo,
     normalize_market,
 )
 from swarm import JevTriage  # noqa: E402
 
-# Shapes below match polymarket_us 0.1.2 TypedDicts exactly.
+# Everything the quote endpoint returns is wrapped in `marketData`. Reading
+# `bbo["bestBid"]` straight off the top level yields None for every market,
+# which reads downstream as `no_quote` and looks like a selective gate.
 RAW_BBO = {
-    "marketSlug": "fed-cuts-october",
-    "bestBid": {"value": "0.53", "currency": "USD"},
-    "bestAsk": {"value": "0.55", "currency": "USD"},
-    "bidDepth": 4200,
-    "askDepth": 3800,
-    "lastTradePx": {"value": "0.54", "currency": "USD"},
-    "sharesTraded": "120000",
-    "openInterest": "88000",
+    "marketData": {
+        "marketSlug": "fed-cuts-october",
+        "bestBid": {"value": "0.53", "currency": "USD"},
+        "bestAsk": {"value": "0.55", "currency": "USD"},
+        "bidDepth": 4200,
+        "askDepth": 3800,
+        "lastTradePx": {"value": "0.54", "currency": "USD"},
+        # Share counts, sent as decimal strings. There is no dollar volume
+        # field anywhere in the response.
+        "sharesTraded": "120000.0000",
+        "openInterest": "88000.0000",
+        "bidShares": "1100000",
+        "askShares": "280000",
+        "state": "MARKET_STATE_OPEN",
+    }
 }
 
+# `question` is the event-level proposition, `title` the leg being priced.
+# Both are present on 100% of open markets. Neither `volume` nor
+# `liquidity` appears at all.
 RAW_MARKET = {
-    "id": 991,
+    "id": "991",
     "slug": "fed-cuts-october",
-    "title": "Will the Fed cut rates in October?",
-    "outcome": "Yes",
+    "question": "Will the Fed cut rates in October?",
+    "title": "Yes",
+    "titleShort": "Yes",
     "description": "Resolves YES if the FOMC lowers the target range.",
     "active": True,
     "closed": False,
-    "liquidity": 140_000.0,
-    "volume": 812_000.0,
+    "status": "MARKET_STATUS_OPEN",
+    "endDate": "2026-10-29T18:00:00Z",
+    "startDate": "2026-10-01T00:00:00Z",
+    "outcomes": ["Yes", "No"],
+    "outcomePrices": ["0.5300", "0.4700"],
     "eventSlug": "fomc-october",
 }
 
+# Events carry `endDate`. `endTime` is declared by the SDK stub and is
+# never sent -- it was 0/50 across sampled events.
 RAW_EVENT = {
-    "id": 77,
+    "id": "77",
     "slug": "fomc-october",
     "title": "FOMC October Decision",
     "description": "Federal Open Market Committee, October meeting.",
     "startTime": "2026-10-01T00:00:00Z",
-    "endTime": "2026-10-29T18:00:00Z",
+    "endDate": "2026-10-29T18:00:00Z",
     "active": True,
     "closed": False,
-    "liquidity": 140_000.0,
-    "volume": 812_000.0,
     "markets": [RAW_MARKET],
-    "tags": [{"id": 3, "slug": "economics", "label": "Economics"}],
+    "tags": [{"id": "3", "slug": "economics", "label": "Economics"}],
+}
+
+# A resolved market. `active` stays True, so only `closed`/`status`
+# distinguish it -- this is the shape that made {"active": True} return
+# nothing but settled markets.
+RESOLVED_MARKET = {
+    **RAW_MARKET,
+    "slug": "fed-cuts-september",
+    "active": True,
+    "closed": True,
+    "status": "MARKET_STATUS_RESOLVED",
 }
 
 
@@ -70,39 +104,104 @@ def test_amount_parses_decimal_strings():
     assert amount({"value": "abc"}) is None
 
 
-def test_normalize_bbo_extracts_nested_amounts():
+def test_normalize_bbo_reads_through_the_marketdata_envelope():
     b = normalize_bbo(RAW_BBO)
     assert b["bid"] == 0.53
     assert b["ask"] == 0.55
     assert b["bid_depth"] == 4200
     assert b["last"] == 0.54
     assert isinstance(b["bid"], float)
+    assert b["shares_traded"] == 120_000.0
+    assert b["open_interest"] == 88_000.0
+
+
+def test_normalize_bbo_ignores_a_top_level_shape():
+    """
+    The envelope is what the gateway sends, but tolerate an unwrapped dict
+    rather than silently returning None if it ever changes back.
+    """
+    flat = dict(RAW_BBO["marketData"])
+    assert normalize_bbo(flat)["bid"] == 0.53
 
 
 def test_normalize_bbo_survives_empty():
     assert normalize_bbo(None)["bid"] is None
     assert normalize_bbo({})["ask"] is None
+    assert normalize_bbo({"marketData": {}})["bid"] is None
 
 
-def test_normalize_market_pulls_close_time_from_event():
+def test_normalize_market_maps_question_and_outcome_separately():
     m = normalize_market(RAW_MARKET, RAW_EVENT)
+    # `question` is the proposition; `title` is the leg. Swapping them
+    # makes every question in questions.py read the wrong string.
     assert m["question"] == "Will the Fed cut rates in October?"
-    assert m["volume_usd"] == 812_000.0
-    assert m["liquidity_usd"] == 140_000.0
-    assert m["closes_at"] == "2026-10-29T18:00:00Z"   # lives on the EVENT
+    assert m["outcome"] == "Yes"
     assert m["tags"] == ["economics"]
 
 
-def test_normalize_market_without_event_has_no_close_time():
+def test_normalize_market_leaves_volume_unset():
+    """No volume or liquidity field exists; it is derived from the quote."""
+    m = normalize_market(RAW_MARKET, RAW_EVENT)
+    assert m["volume_usd"] is None
+    assert m["liquidity_usd"] is None
+
+
+def test_close_time_prefers_the_markets_own_end_date():
+    """
+    A leg can resolve months after its parent event ends, and that gap is
+    exactly what the "capital parked too long" check is measuring.
+    """
+    late = {**RAW_MARKET, "endDate": "2027-02-01T23:59:00Z"}
+    m = normalize_market(late, RAW_EVENT)
+    assert m["closes_at"] == "2027-02-01T23:59:00Z"
+
+    # Priority: market endDate, then event endDate, then the stub's
+    # `endTime` purely as tolerance -- the gateway never sends it, so
+    # reading it FIRST (as this once did) yields None on every market.
+    no_date = {k: v for k, v in RAW_MARKET.items() if k != "endDate"}
+    assert normalize_market(no_date, RAW_EVENT)["closes_at"] == \
+        "2026-10-29T18:00:00Z"
+    stub_only = {"slug": "x", "endTime": "2026-01-01T00:00:00Z"}
+    assert normalize_market(no_date, stub_only)["closes_at"] == \
+        "2026-01-01T00:00:00Z"
+
+
+def test_normalize_market_without_event_still_has_a_close_time():
     m = normalize_market(RAW_MARKET)
-    assert m["closes_at"] is None
+    assert m["closes_at"] == "2026-10-29T18:00:00Z"
     assert m["question"] == "Will the Fed cut rates in October?"
 
 
-def test_iter_event_markets_applies_volume_floor():
-    resp = {"events": [RAW_EVENT]}
-    assert len(iter_event_markets(resp, min_volume=50_000)) == 1
-    assert len(iter_event_markets(resp, min_volume=900_000)) == 0
+def test_derive_notionals_converts_share_counts_to_dollars():
+    b = normalize_bbo(RAW_BBO)
+    n = derive_notionals(b)
+    # 120_000 shares at a 0.54 mid
+    assert n["volume_usd"] == pytest.approx(64_800.0)
+    assert n["liquidity_usd"] == pytest.approx(47_520.0)
+
+
+def test_derive_notionals_is_none_without_a_quote():
+    assert derive_notionals(normalize_bbo(None))["volume_usd"] is None
+
+
+def test_iter_event_markets_skips_resolved_markets_that_stay_active():
+    """
+    The regression that produced zero candidates: `active` remains True on
+    a settled market, so it cannot carry this filter alone.
+    """
+    ev = {**RAW_EVENT, "markets": [RAW_MARKET, RESOLVED_MARKET]}
+    pairs = iter_event_markets({"events": [ev]})
+    assert [m["slug"] for m, _ in pairs] == ["fed-cuts-october"]
+
+
+def test_iter_event_markets_takes_no_volume_floor():
+    """
+    The old signature filtered on a field that does not exist, so any
+    nonzero floor emptied the list. Passing one must now be a hard error
+    rather than a silent zero.
+    """
+    with pytest.raises(TypeError):
+        iter_event_markets({"events": [RAW_EVENT]}, min_volume=50_000)
 
 
 def test_iter_event_markets_skips_closed():
@@ -114,24 +213,29 @@ def test_iter_event_markets_skips_closed():
 # the regression this layer exists to prevent
 # --------------------------------------------------------------------------
 
-def test_raw_sdk_shapes_would_have_produced_an_empty_state():
+def test_raw_sdk_shapes_produce_a_hollow_state():
     """
-    Passing raw SDK objects straight through yields a state full of Nones,
-    and Jev would return confident probabilities about nothing. This is the
-    failure the adapter exists to make impossible.
+    Passing raw objects through yields a state with no prices and no
+    volume, and Jev would return confident probabilities about nothing.
+
+    Note what makes this *worse* than it used to be: the raw market really
+    does carry `question`, so the bad state is no longer obviously empty --
+    it reads like a normal market with a missing quote. The prices are the
+    tell, and only the adapter supplies them.
     """
     bad = JevTriage.build_state(RAW_MARKET, RAW_BBO)
     assert bad["best_bid"] is None
     assert bad["best_ask"] is None
     assert bad["volume_usd"] is None
-    assert bad["question"] is None
+    assert bad["spread"] is None
+    assert bad["question"] is not None, "this is the part that looks fine"
 
     good = JevTriage.build_state(
         normalize_market(RAW_MARKET, RAW_EVENT), normalize_bbo(RAW_BBO)
     )
     assert good["best_bid"] == 0.53
     assert good["spread"] == pytest.approx(0.02)
-    assert good["volume_usd"] == 812_000.0
+    assert good["volume_usd"] == pytest.approx(64_800.0)
     assert good["question"].startswith("Will the Fed")
 
 
@@ -147,7 +251,7 @@ def test_tier1_state_excludes_market_internals():
     )
     # build_state keeps numerics for structural_filter()...
     assert full["best_bid"] == 0.53
-    assert full["volume_usd"] == 812_000.0
+    assert full["volume_usd"] == pytest.approx(64_800.0)
     assert full["hours_to_close"] is not None
 
     # ...but the payload actually sent to the model does not.

@@ -152,16 +152,21 @@ async def collect(
     tracker = PriceTracker()
     sem = asyncio.Semaphore(concurrency)
     gate = GateThresholds()
+    # --min-volume now overrides the structural floor rather than a query
+    # parameter the gateway ignores. Volume is derived from the quote, so
+    # it cannot be applied before the bbo fetch.
+    limits = StructuralLimits(min_volume_usd=min_volume)
     seen = skipped = 0
 
     async with AsyncPolymarketUS() as pm:  # public endpoints, no auth needed
         # Collect via EVENTS, not markets.list: closes_at and tags live on
         # the event, and both change how triage should read a price level.
-        page = await pm.events.list(
-            {"limit": limit, "active": True, "closed": False,
-             "volumeMin": min_volume}
-        )
-        pairs = iter_event_markets(page, min_volume=min_volume)
+        # `closed: False` is what selects open markets. `active: True`
+        # does NOT -- it returns resolved markets, which stay active=True.
+        # `volumeMin` is accepted by the gateway and silently ignored, so
+        # the volume floor is applied later, in structural_filter().
+        page = await pm.events.list({"limit": limit, "closed": False})
+        pairs = iter_event_markets(page)
         log.info("fetched %d events -> %d candidate markets",
                  len(page.get("events", [])), len(pairs))
 
@@ -179,7 +184,7 @@ async def collect(
                         return
                     tracker.observe(slug, (bbo["bid"] + bbo["ask"]) / 2.0)
                     norm = normalize_market(market, event)
-                    v = await jev.evaluate(norm, bbo, gate, tracker)
+                    v = await jev.evaluate(norm, bbo, gate, tracker, limits)
                 except Exception as exc:
                     log.warning("triage failed on %s: %s", slug, exc)
                     return
