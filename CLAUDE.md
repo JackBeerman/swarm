@@ -130,6 +130,24 @@ name here, check it against a live response, not against
   sweeping any one threshold showed 0% at every value because the other
   five still bound. Now: one hard veto, two floors, one composite score,
   one threshold. Keep it that way.
+- **ANDed thresholds, second form: multiplied factors.** The fix above was
+  undone in spirit by `raw × outcome_multiplier × (0.5 + 0.5·confidence)`.
+  Since `raw` is bounded at 1.0, that product could not reach a 0.60
+  threshold for two of four outcome types, and `contested_event` needed
+  confidence of exactly **1.00** — unreachable. It failed the same silent
+  way, and a sweep of `min_gate_score` would have shown 0% at every value.
+  **Do not multiply independent factors together against a fixed
+  threshold.** Penalties subtract; routing decisions are branches.
+- **Structural floors tuned on synthetic data.** The shipped floors passed
+  **0 of 176** live markets. `min_volume_usd` was 50,000 against a live
+  median of $34. Any floor here must be set from a measured distribution,
+  and checked as a *joint* pass rate — marginals hide interactions.
+- **Comparing a level count to a share floor.** `min_depth_shares` was
+  compared against `bidDepth`/`askDepth`, which count book levels (range
+  1–16), not shares. At a floor of 200 it rejected 100% of markets, and it
+  was invisible because the volume check returned first. When a filter
+  short-circuits, every check after the first is untested by the reject
+  reasons — evaluate each one independently before trusting any of them.
 - **Concurrent Kelly.** Without `PortfolioLock`, 30 concurrent
   evaluations on a $100 bankroll committed **$170.70**. Each pipeline read
   the same unreserved bankroll.

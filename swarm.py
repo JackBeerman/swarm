@@ -323,13 +323,22 @@ class JevTriage:
 
 def compute_gate_score(v: TriageVerdict, gate: GateThresholds) -> float:
     """
-    Weighted arithmetic mean of the tractability signals, scaled by the
-    outcome-type multiplier and by Jev's confidence on the score question.
+    Weighted arithmetic mean of the tractability signals, minus a penalty
+    for the outcome type.
 
     Arithmetic, not geometric: a geometric mean is another way of writing
     an AND, since one near-zero term annihilates the product. Weakness on
     one axis should cost a market proportionally; the floors in
     GateThresholds handle genuine disqualifiers.
+
+    Nothing here multiplies. An earlier version scaled this by both an
+    outcome multiplier and a confidence term; because `raw` is bounded at
+    1.0, the product could not reach min_gate_score for two of the four
+    outcome types, and contested_event needed confidence of exactly 1.00.
+    That is the ANDed-thresholds failure in another form, and sweeping
+    min_gate_score would have shown 0% at every value for those types
+    without revealing why. Confidence is now a routing decision in
+    apply_gate(), not a factor here.
 
     This is TypeSafe's own Composite Scoring pattern -- independent
     probabilities combined by weights that live in code and can be
@@ -343,12 +352,8 @@ def compute_gate_score(v: TriageVerdict, gate: GateThresholds) -> float:
         + gate.w_self_contained * v.self_contained
     ) / w
 
-    raw *= gate.outcome_type_multiplier.get(v.outcome_type, 0.75)
-
-    # Confidence pulls toward 0.5, not toward 0: an uncertain read is
-    # weaker evidence for, not evidence against.
-    conf = min(max(v.research_confidence, 0.0), 1.0)
-    return round(raw * (0.5 + 0.5 * conf), 4)
+    raw -= gate.outcome_type_penalty.get(v.outcome_type, 0.10)
+    return round(max(raw, 0.0), 4)
 
 
 def apply_gate(v: TriageVerdict, gate: GateThresholds) -> TriageVerdict:
@@ -380,7 +385,27 @@ def apply_gate(v: TriageVerdict, gate: GateThresholds) -> TriageVerdict:
         v.veto_reason = f"research_wont_help={v.research_would_help:.3f}"
         return v
 
-    # 3. The gate: one composite score, one threshold.
+    # 3. Confidence as a route, not a weight.
+    #
+    #    Low Score confidence means the levels were ambiguous or the state
+    #    did not contain enough to judge -- TypeSafe's "do not act" branch.
+    #    Escalation spends real money, so an unreadable market is skipped
+    #    rather than scored down. Scoring it down was worse than skipping:
+    #    it mixed "this market is unattractive" with "triage could not
+    #    tell", and only one of those is information.
+    #
+    #    min_research_confidence ships at 0.0, so this is inert until a
+    #    shadow run shows where the cut belongs.
+    if v.research_confidence < gate.min_research_confidence:
+        v.escalate = False
+        v.gate_score = 0.0
+        v.veto_reason = (
+            f"low_confidence={v.research_confidence:.3f} "
+            f"< {gate.min_research_confidence}"
+        )
+        return v
+
+    # 4. The gate: one composite score, one threshold.
     v.gate_score = compute_gate_score(v, gate)
     if v.gate_score < gate.min_gate_score:
         v.escalate = False

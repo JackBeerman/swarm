@@ -572,11 +572,52 @@ async def test_gate_score_is_monotonic_in_threshold():
     assert len(set(counts)) > 5, "curve must be tunable, not a cliff"
 
 
-async def test_low_confidence_shrinks_gate_score_without_vetoing():
+async def test_confidence_routes_and_does_not_scale_the_score():
+    """
+    Confidence is a route, not a weight.
+
+    This replaces a test asserting the opposite -- that low confidence
+    shrank the composite. Scaling by it conflated "unattractive market"
+    with "triage could not read this market", and compounded with the
+    outcome multiplier into a ceiling contested_event could never clear.
+    """
     hi = sw.compute_gate_score(_v(research_confidence=0.95), sw.GateThresholds())
     lo = sw.compute_gate_score(_v(research_confidence=0.15), sw.GateThresholds())
-    assert lo < hi
-    assert lo > 0.0, "uncertainty is weaker evidence for, not evidence against"
+    assert hi == lo, "confidence must not enter the composite at all"
+
+    # It routes instead, and only when a floor has been set from data.
+    g = sw.GateThresholds(min_research_confidence=0.50)
+    vetoed = sw._apply_gate(_v(research_confidence=0.15), g)
+    assert vetoed.escalate is False
+    assert "low_confidence" in vetoed.veto_reason
+
+    kept = sw._apply_gate(_v(research_confidence=0.95), g)
+    assert kept.veto_reason is None or "low_confidence" not in kept.veto_reason
+
+
+async def test_confidence_floor_ships_inert():
+    """
+    It must not filter anything until a shadow run says where the cut is.
+    A guessed floor here would silently suppress markets with no evidence.
+    """
+    assert sw.GateThresholds().min_research_confidence == 0.0
+    v = sw._apply_gate(_v(research_confidence=0.0), sw.GateThresholds())
+    assert v.veto_reason is None or "low_confidence" not in v.veto_reason
+
+
+async def test_every_outcome_type_can_reach_the_threshold():
+    """
+    The regression this composition change exists to prevent: with
+    multiplied factors, contested_event needed confidence >= 1.00 and so
+    could never escalate, invisibly to any sweep of min_gate_score.
+    """
+    g = sw.GateThresholds()
+    for outcome_type, penalty in g.outcome_type_penalty.items():
+        ceiling = 1.0 - penalty
+        assert ceiling >= g.min_gate_score, (
+            f"{outcome_type} cannot reach min_gate_score even with a "
+            f"perfect market (ceiling {ceiling:.2f})"
+        )
 
 
 # --------------------------------------------------------------------------

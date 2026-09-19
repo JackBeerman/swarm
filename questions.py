@@ -372,19 +372,47 @@ class GateThresholds:
     w_self_contained: float = 0.25
 
     # Outcome types that historically reward research, applied as a
-    # multiplier on the composite rather than a filter. A contested event
-    # is not disqualifying -- it is simply a harder place to find edge.
-    outcome_type_multiplier: dict[str, float] = None  # set in __post_init__
+    # SUBTRACTED penalty, not a multiplier. A contested event is not
+    # disqualifying -- it is simply a harder place to find edge.
+    #
+    # Why additive: as a multiplier this compounded with the confidence
+    # scale, and since `raw` is bounded at 1.0 the product could not reach
+    # min_gate_score at all for two of the four types. contested_event
+    # required confidence >= 1.00 exactly, so it could never escalate --
+    # the same silent-AND failure as the six ANDed gates, and equally
+    # invisible to a sweep of min_gate_score. Subtracting keeps every type
+    # reachable and keeps one threshold rather than four.
+    #
+    # These four numbers preserve the ordering of the multipliers they
+    # replace. They are not evidence-based and want revisiting once
+    # resolved outcomes exist.
+    outcome_type_penalty: dict[str, float] = None  # set in __post_init__
+
+    # Minimum Score confidence on research_would_help, below which the
+    # market is skipped rather than scored down. TypeSafe's guidance is
+    # that low Score confidence means the levels were ambiguous or the
+    # state was insufficient -- a routing signal ("do not act"), not a
+    # magnitude. Scaling the composite by it, as the previous version did,
+    # systematically suppressed exactly the markets triage could not read,
+    # and dragged every score down because Tier 1 sends deliberately
+    # minimal state.
+    #
+    # Deliberately 0.0 -- NON-BINDING. shadow.py already records
+    # research_confidence per market, so set this from the observed
+    # histogram after a collection run rather than guessing it now. A
+    # guessed value here would silently filter markets before there is
+    # any data showing where the cut belongs.
+    min_research_confidence: float = 0.0
 
     def __post_init__(self) -> None:
-        if self.outcome_type_multiplier is None:
+        if self.outcome_type_penalty is None:
             object.__setattr__(
                 self,
-                "outcome_type_multiplier",
+                "outcome_type_penalty",
                 {
-                    "scheduled_disclosure": 1.00,
-                    "discretionary_action": 0.85,
-                    "continuous_metric": 0.80,
-                    "contested_event": 0.60,
+                    "scheduled_disclosure": 0.00,
+                    "discretionary_action": 0.05,
+                    "continuous_metric": 0.08,
+                    "contested_event": 0.20,
                 },
             )
