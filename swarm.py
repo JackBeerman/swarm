@@ -32,7 +32,7 @@ import httpx
 from litellm import acompletion
 from pydantic import ValidationError
 
-from adapters import derive_notionals
+from adapters import derive_notionals, game_state
 from questions import (
     ALL_TIER1_QUESTIONS,
     GateThresholds,
@@ -184,6 +184,10 @@ class JevTriage:
         """
         bid, ask = _f(bbo.get("bid")), _f(bbo.get("ask"))
         hours_to_close = _hours_until(market.get("closes_at"))
+        # The event clock, distinct from the settlement clock. A game
+        # played today settles ~332h later; `hours_to_close` measures the
+        # payout wait, `hours_to_event` measures when the outcome is known.
+        hours_to_event = _hours_until(market.get("event_at"))
         notionals = derive_notionals(bbo)
 
         return {
@@ -214,6 +218,14 @@ class JevTriage:
                               or notionals["liquidity_usd"]),
             "closes_at": market.get("closes_at"),
             "hours_to_close": hours_to_close,
+            "hours_to_event": hours_to_event,
+            # Live game state. structural_filter() reads these; no Tier 1
+            # question asks about them, because "is this game over" is a
+            # string comparison and belongs in code.
+            "period": market.get("period"),
+            "score": market.get("score"),
+            "elapsed": market.get("elapsed"),
+            "game_state": game_state(market),
         }
 
     @staticmethod

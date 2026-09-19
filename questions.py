@@ -61,8 +61,22 @@ class StructuralLimits:
     # Non-binding on current data: 200 and 5,000 give identical joint
     # results. Kept as a guard against an empty book.
     min_depth_shares: int = 500
+    # Measured against the EVENT clock, not the settlement deadline.
     min_hours_to_close: float = 6.0       # no time for research to pay off
     max_days_to_close: float = 120.0      # capital parked too long
+
+    # Live sports. Both default OFF, so behaviour is unchanged until a
+    # human turns them on.
+    #
+    # in_play: trading a game in progress means reacting to score changes
+    # faster than the book does. On REST polling, against sportsbooks, that
+    # is a race you lose; it wants the markets websocket first.
+    #
+    # finished: the outcome is known and the quotes reflect it. Measured on
+    # finished college football games -- spreads of 0.28-0.49 and 0 shares
+    # on the ask of the one market near $1.00.
+    allow_in_play: bool = False
+    allow_finished_games: bool = False
     min_price: float = 0.05               # avoid lottery-ticket tails
     max_price: float = 0.95
 
@@ -109,12 +123,38 @@ def structural_filter(
         if d is not None and d < limits.min_depth_shares:
             return f"{side}={d:,.0f} < {limits.min_depth_shares:,}"
 
+    # Live sports. `period` tells us where the game is; it is a string
+    # comparison, so it runs here rather than in a question.
+    gs = state.get("game_state")
+    if gs == "finished" and not limits.allow_finished_games:
+        # The outcome is known and the books know it. Measured on finished
+        # college football: spreads of 0.28-0.49, and 0 shares on the ask
+        # of the one market quoting near $1.00. There is no settlement-lag
+        # trade, only a wide spread and a two-week wait.
+        return f"game over (period={state.get('period')}), no edge left"
+    if gs == "in_play" and not limits.allow_in_play:
+        return f"in play (period={state.get('period')}), not configured for it"
+
+    # TWO CLOCKS. `hours_to_event` is when the outcome is known;
+    # `hours_to_close` is when the payout lands, and for a game played
+    # today that is ~332h away. Gating research time on the settlement
+    # deadline is what made every short-dated market look like a
+    # two-week hold.
+    # Only when the event is genuinely ahead of us. On a season future
+    # `startTime` is when the SEASON began -- 307h in the past for an
+    # in-progress MLB series whose market settles 1,149h out. Treating that
+    # as a research deadline rejected every futures market as "too soon",
+    # which is the same class of mistake as reading the settlement deadline
+    # as the event time, in the opposite direction.
+    ev_hrs = state.get("hours_to_event")
+    research_hrs = (ev_hrs if (ev_hrs is not None and ev_hrs > 0)
+                    else state.get("hours_to_close"))
+    if research_hrs is not None and research_hrs < limits.min_hours_to_close:
+        return f"event in {research_hrs:.1f}h, too soon to research"
+
     hrs = state.get("hours_to_close")
-    if hrs is not None:
-        if hrs < limits.min_hours_to_close:
-            return f"closes in {hrs:.1f}h, too soon to research"
-        if hrs > limits.max_days_to_close * 24:
-            return f"closes in {hrs / 24:.0f}d, capital parked too long"
+    if hrs is not None and hrs > limits.max_days_to_close * 24:
+        return f"settles in {hrs / 24:.0f}d, capital parked too long"
 
     return None
 

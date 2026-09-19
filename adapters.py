@@ -166,12 +166,31 @@ def normalize_market(
         "description": (market.get("description") or ev.get("description") or ""),
         "event_slug": market.get("eventSlug") or ev.get("slug"),
         "event_title": ev.get("title"),
-        # The market's own endDate is when THIS leg resolves and can be
-        # months past the event's. Prefer it; that difference is the whole
-        # "capital parked too long" check.
+        # TWO DIFFERENT CLOCKS, and conflating them is why short-dated
+        # markets looked absent. `endDate` is the SETTLEMENT DEADLINE, not
+        # the event: a college football game played today carries an
+        # endDate ~332h out. The outcome is decided in hours; only the
+        # payout waits two weeks.
+        #
+        #   settles_at  when the payout lands      -> capital-parked check
+        #   event_at    when the outcome is known  -> everything else
+        #
+        # `closes_at` stays as settles_at for the existing consumers.
         "closes_at": (market.get("endDate") or ev.get("endDate")
                       or ev.get("endTime")),
+        "settles_at": (market.get("endDate") or ev.get("endDate")),
+        "event_at": (ev.get("startTime") or market.get("gameStartTime")
+                     or market.get("startDate")),
         "starts_at": ev.get("startTime") or market.get("startDate"),
+        # Live game state. Present on game events only, and absent from
+        # season futures. `period` is the reliable one -- it is on every
+        # sports event; score/elapsed populate once play begins.
+        #   NS = not started, FT = full time, otherwise in play
+        #   ("Q4", "1H", "Bot 5th", "34'")
+        "period": ev.get("period"),
+        "score": ev.get("score"),
+        "elapsed": ev.get("elapsed"),
+        "is_live": bool(ev.get("live")),
         "tags": tags,
         # Not on the wire. Filled by derive_notionals() from the quote.
         "volume_usd": None,
@@ -257,6 +276,32 @@ async def fetch_events_across_tags(
             out.append(ev)
         await asyncio.sleep(pause)
     return out
+
+
+#: `period` values that mean the outcome is already determined. Markets on
+#: these stay open until settlement, but the books go wide the moment play
+#: ends -- measured spreads of 0.28-0.49 on finished college football games,
+#: and 0 shares on the one quote near $1.00. There is no settlement-lag
+#: trade here; treat FT as a reason to skip, not an opportunity.
+PERIOD_FINISHED = {"FT", "AOT", "FT_PEN", "AET", "Final", "F"}
+
+#: `period` value meaning play has not begun.
+PERIOD_NOT_STARTED = {"NS", "TBD", "PST"}
+
+
+def game_state(market: dict[str, Any]) -> str:
+    """
+    'not_started' | 'in_play' | 'finished' | 'unknown', from a normalized
+    market. Arithmetic on a string, so it belongs in code, not a question.
+    """
+    p = (market.get("period") or "").strip()
+    if not p:
+        return "unknown"
+    if p in PERIOD_FINISHED:
+        return "finished"
+    if p in PERIOD_NOT_STARTED:
+        return "not_started"
+    return "in_play"
 
 
 def interleave_by_event(

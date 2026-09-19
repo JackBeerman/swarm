@@ -407,3 +407,70 @@ def test_interleave_spreads_markets_across_events():
     assert len(out) == len(pairs), "interleaving must not drop markets"
     assert {e["slug"] for _, e in out[:3]} == {"a", "b", "c"}
     assert len({m["slug"] for m, _ in out}) == len(pairs), "no duplicates"
+
+
+# --------------------------------------------------------------------------
+# Live sports: two clocks, and game state
+# --------------------------------------------------------------------------
+
+GAME_EVENT = {
+    "slug": "cfb-ga-ark-2026-09-19",
+    "title": "Georgia vs Arkansas",
+    "startTime": "2026-09-19T16:00:00Z",   # kickoff
+    "endDate": "2026-10-03T16:00:00Z",     # settlement deadline, ~2 weeks later
+    "period": "Q4",
+    "score": "45-17",
+    "elapsed": "8:24",
+    "live": True,
+    "tags": [{"slug": "sports"}],
+    "markets": [],
+}
+
+GAME_MARKET = {
+    "slug": "astatc-cfb-ga-ark-2026-09-19-fd-h-23",
+    "question": "Team Total First Downs: Over 23.5",
+    "title": "Over",
+    "active": True,
+    "closed": False,
+    "status": "MARKET_STATUS_OPEN",
+    "endDate": "2026-10-03T16:00:00Z",
+    "gameStartTime": "2026-09-19T16:00:00Z",
+}
+
+
+def test_event_clock_is_separate_from_settlement_clock():
+    """
+    A game played today settles ~332h later. Gating on the settlement
+    deadline made every short-dated market look like a two-week hold, and
+    is why a fast-resolution sweep found nothing.
+    """
+    m = normalize_market(GAME_MARKET, GAME_EVENT)
+    assert m["event_at"] == "2026-09-19T16:00:00Z"
+    assert m["settles_at"] == "2026-10-03T16:00:00Z"
+    assert m["event_at"] != m["settles_at"], "conflating these hides fast markets"
+
+
+def test_live_state_reaches_the_normalized_market():
+    m = normalize_market(GAME_MARKET, GAME_EVENT)
+    assert m["period"] == "Q4"
+    assert m["score"] == "45-17"
+    assert m["elapsed"] == "8:24"
+    assert m["is_live"] is True
+
+
+def test_game_state_classifies_period():
+    from adapters import game_state
+    assert game_state({"period": "NS"}) == "not_started"
+    assert game_state({"period": "FT"}) == "finished"
+    for live in ("Q4", "1H", "Bot 5th", "34'", "Q1"):
+        assert game_state({"period": live}) == "in_play", live
+    assert game_state({"period": None}) == "unknown"
+    assert game_state({}) == "unknown"
+
+
+def test_season_futures_carry_no_period():
+    """Live fields are on game events only; futures must not crash."""
+    m = normalize_market(RAW_MARKET, RAW_EVENT)
+    assert m["period"] is None
+    from adapters import game_state
+    assert game_state(m) == "unknown"

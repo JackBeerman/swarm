@@ -831,3 +831,83 @@ async def test_default_tier_models_are_self_consistent():
     for model in (sw.TIER2_MODEL, sw.TIER3_MODEL):
         kwargs = sw.sampling_kwargs(model, 0.1)
         assert kwargs in ({}, {"temperature": 0.1})
+
+
+# --------------------------------------------------------------------------
+# Live sports gating
+# --------------------------------------------------------------------------
+
+LIVE_MARKET = {
+    **MARKET,
+    "slug": "cfb-ga-ark-fd-h-23",
+    "event_at": (datetime.now(timezone.utc) + timedelta(hours=30)).isoformat(),
+    "closes_at": (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
+    "period": "NS",
+}
+
+
+async def test_finished_game_is_skipped_by_default():
+    """
+    Outcome known, books gone wide. Measured on finished college football:
+    spreads 0.28-0.49 and 0 shares on the ask nearest $1.00.
+    """
+    st = sw.JevTriage.build_state({**LIVE_MARKET, "period": "FT"}, BBO)
+    assert st["game_state"] == "finished"
+    reason = sw.structural_filter(st, sw.StructuralLimits())
+    assert reason is not None and "game over" in reason
+
+
+async def test_in_play_is_off_until_deliberately_enabled():
+    st = sw.JevTriage.build_state({**LIVE_MARKET, "period": "Q4"}, BBO)
+    assert st["game_state"] == "in_play"
+    assert "in play" in (sw.structural_filter(st, sw.StructuralLimits()) or "")
+    allowed = sw.StructuralLimits(allow_in_play=True)
+    r = sw.structural_filter(st, allowed)
+    assert r is None or "in play" not in r
+
+
+async def test_research_window_uses_the_event_clock_not_settlement():
+    """
+    The game is 2h away but settlement is 14 days out. Gating on
+    hours_to_close would call this a comfortable two-week hold; the
+    research window is actually 2 hours.
+    """
+    soon = {
+        **LIVE_MARKET,
+        "event_at": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(),
+    }
+    st = sw.JevTriage.build_state(soon, BBO)
+    assert st["hours_to_close"] > 300, "settlement really is far out"
+    assert st["hours_to_event"] < 3
+    reason = sw.structural_filter(st, sw.StructuralLimits())
+    assert reason is not None and "too soon" in reason
+
+
+async def test_capital_parked_still_measured_on_settlement():
+    """The payout wait is the settlement clock, not the event clock."""
+    far = {
+        **LIVE_MARKET,
+        "closes_at": (datetime.now(timezone.utc) + timedelta(days=400)).isoformat(),
+    }
+    st = sw.JevTriage.build_state(far, BBO)
+    reason = sw.structural_filter(st, sw.StructuralLimits())
+    assert reason is not None and "capital parked" in reason
+
+
+async def test_past_event_time_falls_back_to_settlement_clock():
+    """
+    On a season future, `startTime` is when the SEASON began -- measured at
+    -307h for an in-progress MLB series whose market settles 1,149h out.
+    Read as a research deadline that rejects every futures market as "too
+    soon", which is the settlement/event confusion running backwards.
+    """
+    season = {
+        **LIVE_MARKET,
+        "event_at": (datetime.now(timezone.utc) - timedelta(hours=307)).isoformat(),
+        "closes_at": (datetime.now(timezone.utc) + timedelta(hours=1149)).isoformat(),
+        "period": "NS",
+    }
+    st = sw.JevTriage.build_state(season, BBO)
+    assert st["hours_to_event"] < 0
+    reason = sw.structural_filter(st, sw.StructuralLimits())
+    assert reason is None or "too soon" not in reason, reason
