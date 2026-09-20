@@ -376,6 +376,186 @@ TRACTABILITY_QUESTIONS: dict[str, dict[str, Any]] = {
     },
 }
 
+# ==========================================================================
+# Tier 1 questions -- sports
+# ==========================================================================
+#
+# The general tractability set cannot be pointed at sports. Its
+# `research_would_help` has "Live sporting event in progress" as the
+# bottom Score level, so every sports market scores near 0, hits
+# floor_research_would_help, and is vetoed. `outcome_type` has no category
+# that fits a prop, so everything falls to `contested_event` and takes the
+# largest penalty. Sports markets were rejected by design.
+#
+# These replace the tractability block for sports-tagged markets. The
+# restricted questions below are unchanged and always asked -- the
+# operator constraint does not care what sport it is.
+#
+# Nothing here asks about game state. Tier 1 sees only question,
+# description, outcome, event and tags; period and score are handled by
+# adapters.game_state() in code.
+
+SPORTS_QUESTIONS: dict[str, dict[str, Any]] = {
+    # The single best predictor of whether any estimate can beat noise on
+    # a prop. "Team total first downs over 23.5" accumulates over ~60
+    # plays, so the central limit theorem does most of the work and a
+    # small edge in expected pace is recoverable. "First player to score"
+    # is one draw from a wide distribution; no research narrows it enough
+    # to beat the vig.
+    "stat_aggregation": {
+        "type": "score",
+        "instructions": {
+            "question": (
+                "Is the quantity being priced an aggregate over many "
+                "opportunities, or a single discrete occurrence?"
+            ),
+            "inspect": "`question` and `outcome`",
+            "focus": (
+                "Count how many independent chances contribute to the "
+                "result. Judge the structure of the quantity, not whether "
+                "the line is set well and not who is likely to win."
+            ),
+        },
+        "criteria": [
+            {
+                "what": "One discrete occurrence; the outcome is a single draw",
+                "signals": [
+                    "First player to score",
+                    "Exact final score or exact margin",
+                    "Whether a specific one-off event happens at all",
+                ],
+            },
+            {
+                "what": "A small count with few contributing opportunities",
+                "signals": [
+                    "One player's touchdowns or home runs in a game",
+                    "Field goals made by a single kicker",
+                ],
+            },
+            {
+                "what": "An aggregate accumulated over many plays or possessions",
+                "signals": [
+                    "Team total yards, first downs, or total points",
+                    "Combined score of both teams",
+                    "A count that rises steadily through the game",
+                ],
+            },
+        ],
+    },
+    # The sports replacement for research_would_help. Not "can this be
+    # researched" in the abstract, but whether SCHEDULED, PUBLISHED
+    # information bears on this quantity -- the only edge a gatherer with
+    # a web search can actually fetch.
+    "pregame_information_edge": {
+        "type": "score",
+        "instructions": {
+            "question": (
+                "Would published pre-game information plausibly move a "
+                "careful estimate of this quantity?"
+            ),
+            "inspect": "`question`, `description` and `event`",
+            "focus": (
+                "Injury and inactive reports, confirmed starters, weather "
+                "at an outdoor venue, rest days, travel. Judge whether "
+                "such information BEARS on this quantity -- not whether "
+                "the market has already priced it, which is a separate "
+                "judgment and not answerable from this text."
+            ),
+        },
+        "criteria": [
+            {
+                "what": "No published pre-game information bears on it",
+                "signals": [
+                    "Depends on in-game randomness alone",
+                    "Turns on a single official's discretionary call",
+                ],
+            },
+            {
+                "what": "Published information bears on it only indirectly",
+                "signals": [
+                    "Team-level form is relevant but no specific report is",
+                    "Weather matters slightly at an indoor venue",
+                ],
+            },
+            {
+                "what": "Scheduled, published information bears on it directly",
+                "signals": [
+                    "A named starter's availability drives the quantity",
+                    "Wind or precipitation at an outdoor kicking prop",
+                    "An injury report due before the market closes",
+                    "Confirmed lineup or starting pitcher",
+                ],
+            },
+        ],
+    },
+    "sports_market_type": {
+        "type": "choice",
+        "instructions": {
+            "question": "What kind of quantity does this market price?",
+            "focus": (
+                "Classify the quantity, not the sport and not the teams."
+            ),
+        },
+        "criteria": {
+            "team_aggregate_stat": {
+                "what": "A team-level total accumulated over the game",
+                "examples": ["Team total first downs over 23.5",
+                             "Team total rushing yards over 100.5"],
+            },
+            "game_aggregate_stat": {
+                "what": "A combined total across both teams",
+                "examples": ["Total points over 47.5",
+                             "Combined runs under 8.5"],
+            },
+            "player_stat": {
+                "what": "A single player's production",
+                "examples": ["Passing yards over 249.5",
+                             "Player total bases"],
+            },
+            "game_result": {
+                "what": "Who wins, or the margin",
+                "examples": ["Moneyline", "Wins by over 5.5"],
+            },
+            "discrete_event": {
+                "what": "A single occurrence that either happens or does not",
+                "examples": ["First touchdown scorer",
+                             "Any player to hit 2 home runs"],
+            },
+        },
+    },
+    # Carried over unchanged: a stat line is about as objective as a
+    # market gets, but the question still discriminates on vague props.
+    "objective_resolution": TRACTABILITY_QUESTIONS["objective_resolution"],
+}
+
+#: Tags that route a market to the sports question set.
+SPORTS_TAGS = frozenset({
+    "sports", "mlb", "nfl", "nba", "nhl", "baseball", "football",
+    "basketball", "hockey", "soccer", "mls", "ufc", "mma", "boxing",
+    "tennis", "golf", "pga", "motorsports", "f1", "nascar", "cfb",
+    "ncaab", "cricket", "rugby", "esports", "lol",
+})
+
+
+def is_sports_market(market: dict[str, Any]) -> bool:
+    """
+    Route on tags, in code. Deterministic, so it is not a question.
+
+    Reads the normalized market (or a built state) -- both carry `tags`.
+    """
+    tags = market.get("tags") or []
+    return any(str(t).lower() in SPORTS_TAGS for t in tags)
+
+
+def tier1_questions_for(market: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """
+    The question set for this market. Restricted questions are always
+    asked; only the tractability block swaps.
+    """
+    block = SPORTS_QUESTIONS if is_sports_market(market) else TRACTABILITY_QUESTIONS
+    return {**RESTRICTED_QUESTIONS, **block}
+
+
 ALL_TIER1_QUESTIONS: dict[str, dict[str, Any]] = {
     **RESTRICTED_QUESTIONS,
     **TRACTABILITY_QUESTIONS,
@@ -403,6 +583,24 @@ class GateThresholds:
     # --- disqualifying floors ---------------------------------------
     floor_objective_resolution: float = 0.45
     floor_research_would_help: float = 0.60     # on the 0-2 scale
+
+    # --- sports composite -------------------------------------------
+    # Used instead of the three weights below when the market is sports.
+    # stat_aggregation carries the most weight because it is the judgment
+    # that decides whether an estimate can beat variance at all.
+    #
+    # self_contained is deliberately absent: a stat line is self-contained
+    # essentially always, so including it would add a constant rather than
+    # information.
+    #
+    # Starting points, no evidence behind them -- same status as every
+    # other number here until something scores against a resolved outcome.
+    floor_stat_aggregation: float = 0.60          # on the 0-2 scale
+    w_stat_aggregation: float = 0.45
+    w_pregame_information_edge: float = 0.35
+    w_objective_resolution_sports: float = 0.20
+
+    sports_market_type_penalty: dict[str, float] = None  # __post_init__
 
     # --- the composite gate -----------------------------------------
     min_gate_score: float = 0.60
@@ -445,6 +643,21 @@ class GateThresholds:
     min_research_confidence: float = 0.0
 
     def __post_init__(self) -> None:
+        if self.sports_market_type_penalty is None:
+            object.__setattr__(
+                self,
+                "sports_market_type_penalty",
+                {
+                    # Subtracted, never multiplied -- see the note on
+                    # outcome_type_penalty. Every type stays reachable:
+                    # the worst ceiling is 0.75 against a 0.60 threshold.
+                    "team_aggregate_stat": 0.00,
+                    "game_aggregate_stat": 0.00,
+                    "player_stat": 0.08,
+                    "game_result": 0.10,
+                    "discrete_event": 0.25,
+                },
+            )
         if self.outcome_type_penalty is None:
             object.__setattr__(
                 self,

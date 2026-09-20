@@ -68,6 +68,10 @@ CREATE TABLE IF NOT EXISTS verdicts (
     research_confidence         REAL,
     outcome_type                TEXT,
     outcome_type_confidence     REAL,
+    is_sports                   INTEGER,
+    stat_aggregation            REAL,
+    pregame_information_edge    REAL,
+    sports_market_type          TEXT,
     structural_reject           TEXT,
     escalate                 INTEGER NOT NULL,
     veto_reason              TEXT,
@@ -96,10 +100,27 @@ FIELDS = [
 ]
 
 
+#: Columns added after the first schema shipped. CREATE TABLE IF NOT
+#: EXISTS does not alter an existing table, so a database from an earlier
+#: run keeps the old shape and every insert fails on the new columns.
+_MIGRATIONS = {
+    "is_sports": "INTEGER",
+    "stat_aggregation": "REAL",
+    "pregame_information_edge": "REAL",
+    "sports_market_type": "TEXT",
+}
+
+
 def connect(path: str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(verdicts)")}
+    for col, decl in _MIGRATIONS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE verdicts ADD COLUMN {col} {decl}")
+            log.info("shadow.db: added column %s", col)
+    conn.commit()
     return conn
 
 
@@ -130,10 +151,13 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             federal_policy_outcome, defense_or_military,
             us_election_or_appointment, objective_resolution, self_contained,
             research_would_help, research_confidence, outcome_type,
-            outcome_type_confidence, structural_reject,
+            outcome_type_confidence,
+            is_sports, stat_aggregation, pregame_information_edge,
+            sports_market_type,
+            structural_reject,
             escalate, veto_reason, gate_score, latency_ms,
             input_tokens, output_tokens
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             datetime.now(timezone.utc).isoformat(),
             v.market_slug,
@@ -151,6 +175,10 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             v.research_confidence,
             v.outcome_type,
             v.outcome_type_confidence,
+            int(v.is_sports),
+            v.stat_aggregation,
+            v.pregame_information_edge,
+            v.sports_market_type,
             v.structural_reject,
             int(v.escalate),
             v.veto_reason,

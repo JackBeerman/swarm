@@ -56,6 +56,17 @@ class TriageVerdict(BaseModel):
     outcome_type: str = "unknown"
     outcome_type_confidence: float = Field(0.0, ge=0.0, le=1.0)
 
+    # --- sports tractability (asked instead of the above on sports) --
+    # Defaults of 0.0 mean "not asked", which is why is_sports below
+    # carries the routing rather than inferring it from these.
+    stat_aggregation: float = Field(0.0, ge=0.0, le=2.0)
+    stat_aggregation_confidence: float = Field(0.0, ge=0.0, le=1.0)
+    pregame_information_edge: float = Field(0.0, ge=0.0, le=2.0)
+    pregame_information_edge_confidence: float = Field(0.0, ge=0.0, le=1.0)
+    sports_market_type: str = "unknown"
+    sports_market_type_confidence: float = Field(0.0, ge=0.0, le=1.0)
+    is_sports: bool = False
+
     # --- decisions ---------------------------------------------------
     structural_reject: str | None = None
     escalate: bool = False

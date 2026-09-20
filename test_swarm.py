@@ -911,3 +911,123 @@ async def test_past_event_time_falls_back_to_settlement_clock():
     assert st["hours_to_event"] < 0
     reason = sw.structural_filter(st, sw.StructuralLimits())
     assert reason is None or "too soon" not in reason, reason
+
+
+# --------------------------------------------------------------------------
+# Sports question routing
+# --------------------------------------------------------------------------
+
+SPORTS_MARKET = {
+    **MARKET,
+    "slug": "astatc-cfb-ga-ark-2026-09-19-fd-h-23",
+    "question": "Team Total First Downs: Over 23.5",
+    "outcome": "Over",
+    "tags": ["sports", "cfb"],
+    "period": "NS",
+    "event_at": (datetime.now(timezone.utc) + timedelta(hours=30)).isoformat(),
+}
+
+
+def sports_jev_body(**overrides):
+    answers = {
+        "federal_policy_outcome": {"type": "noul", "noul": 0.01},
+        "defense_or_military": {"type": "noul", "noul": 0.01},
+        "us_election_or_appointment": {"type": "noul", "noul": 0.01},
+        "objective_resolution": {"type": "noul", "noul": 0.95},
+        "stat_aggregation": {
+            "type": "score", "score": 1.8, "confidence": 0.82,
+            "probabilities": {"0": 0.03, "1": 0.14, "2": 0.83},
+        },
+        "pregame_information_edge": {
+            "type": "score", "score": 1.5, "confidence": 0.7,
+            "probabilities": {"0": 0.08, "1": 0.34, "2": 0.58},
+        },
+        "sports_market_type": {
+            "type": "choice", "choice": "team_aggregate_stat",
+            "confidence": 0.88,
+            "probabilities": {"team_aggregate_stat": 0.88},
+        },
+    }
+    for k, v in overrides.items():
+        ans = answers[k]
+        key = {"noul": "noul", "score": "score", "choice": "choice"}[ans["type"]]
+        ans[key] = v
+    return {
+        "model": "jev-1.13.0",
+        "answers": answers,
+        "usage": {"input_tokens": 1400, "output_tokens": 0},
+    }
+
+
+async def test_sports_markets_get_the_sports_question_set():
+    from questions import is_sports_market, tier1_questions_for
+    assert is_sports_market(SPORTS_MARKET) is True
+    assert is_sports_market(MARKET) is False
+
+    qs = tier1_questions_for(SPORTS_MARKET)
+    assert "stat_aggregation" in qs
+    assert "pregame_information_edge" in qs
+    # research_would_help's bottom Score level is "Live sporting event in
+    # progress" -- asking it of a sports market vetoes every one.
+    assert "research_would_help" not in qs
+    # The operator constraint does not care what sport it is.
+    for r in ("federal_policy_outcome", "defense_or_military",
+              "us_election_or_appointment"):
+        assert r in qs
+
+
+@respx.mock
+async def test_sports_market_can_actually_escalate():
+    """
+    The regression this whole set exists for: under the general questions
+    every sports market scored ~0 on research_would_help and was vetoed,
+    so an entire asset class could never pass the gate.
+    """
+    respx.post("https://api.typesafe.ai/v1/systemone").mock(
+        return_value=httpx.Response(200, json=sports_jev_body())
+    )
+    jev = sw.JevTriage(api_key="k")
+    v = await jev.evaluate(SPORTS_MARKET, BBO)
+    assert v.is_sports is True
+    assert v.stat_aggregation == 1.8
+    assert v.sports_market_type == "team_aggregate_stat"
+    assert v.veto_reason is None, v.veto_reason
+    assert v.escalate is True
+    await jev.aclose()
+
+
+@respx.mock
+async def test_discrete_props_are_floored_out():
+    """A single-draw prop cannot be beaten by research; floor it."""
+    respx.post("https://api.typesafe.ai/v1/systemone").mock(
+        return_value=httpx.Response(200, json=sports_jev_body(stat_aggregation=0.2))
+    )
+    jev = sw.JevTriage(api_key="k")
+    v = await jev.evaluate(SPORTS_MARKET, BBO)
+    assert v.escalate is False
+    assert "too_discrete" in v.veto_reason
+    await jev.aclose()
+
+
+async def test_sports_scoring_uses_the_sports_weights():
+    g = sw.GateThresholds()
+    v = TriageVerdict(
+        market_slug="x", is_sports=True,
+        objective_resolution=1.0, stat_aggregation=2.0,
+        pregame_information_edge=2.0,
+        sports_market_type="team_aggregate_stat",
+    )
+    assert sw.compute_gate_score(v, g) == pytest.approx(1.0)
+
+    # The same verdict read as non-sports uses fields that were never
+    # asked, and must not silently score well.
+    v2 = v.model_copy(update={"is_sports": False})
+    assert sw.compute_gate_score(v2, g) < 0.5
+
+
+async def test_every_sports_market_type_can_reach_the_threshold():
+    g = sw.GateThresholds()
+    for name, penalty in g.sports_market_type_penalty.items():
+        assert 1.0 - penalty >= g.min_gate_score, (
+            f"{name} cannot reach min_gate_score even when perfect"
+        )

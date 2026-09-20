@@ -35,6 +35,7 @@ from adapters import (
 from config import Config, ConfigError, setup_logging
 from questions import GateThresholds, StructuralLimits
 from risk_engine import CostLedger, KillSwitch, RiskEngine, RiskLimits
+from search import default_search
 from schemas import PipelineResult
 from swarm import JevTriage, PortfolioLock, RiskConfig, Swarm
 
@@ -108,7 +109,10 @@ class Daemon:
 
                 swarm = Swarm(
                     jev=jev,
-                    search=_unconfigured_search,
+                    # Shadow never reaches Tier 2, so it never pays for a
+                    # search. Wiring it anyway would only invite the
+                    # always-on burn the kill switch exists to catch.
+                    search=default_search(enabled=self.cfg.mode != "shadow"),
                     budget=budget,
                     gate=GateThresholds(),
                     risk=RiskConfig(),
@@ -284,9 +288,8 @@ class _ShadowBudget:
         return 0.0
 
 
-async def _unconfigured_search(query: str) -> list[dict[str, str]]:
-    log.warning("web search is not wired up; gatherers will return nothing")
-    return []
+# _unconfigured_search moved to search.unconfigured_search, alongside the
+# Anthropic implementation. default_search() picks between them.
 
 
 def main() -> int:

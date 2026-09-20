@@ -37,7 +37,9 @@ from questions import (
     ALL_TIER1_QUESTIONS,
     GateThresholds,
     StructuralLimits,
+    is_sports_market,
     structural_filter,
+    tier1_questions_for,
 )
 from schemas import (
     GatherRole,
@@ -288,17 +290,27 @@ class JevTriage:
         if reason:
             return TriageVerdict(
                 market_slug=slug,
+                # Recorded even on a structural reject: an analysis of
+                # shadow.db wants to know what the market WAS, and the
+                # default would otherwise report every rejected sports
+                # market as non-sports.
+                is_sports=is_sports_market(market),
                 structural_reject=reason,
                 escalate=False,
                 veto_reason=f"structural: {reason}",
             )
+
+        # Which tractability block to ask is a tag lookup, so it is
+        # decided here rather than by the model.
+        sports = is_sports_market(market)
+        questions = tier1_questions_for(market)
 
         t0 = time.perf_counter()
         body = await self._post(
             {
                 "model": self._model,
                 "state": self._model_state(state),
-                "questions": ALL_TIER1_QUESTIONS,
+                "questions": questions,
             }
         )
         latency_ms = (time.perf_counter() - t0) * 1000
@@ -311,9 +323,13 @@ class JevTriage:
 
         research = a.get("research_would_help", {})
         otype = a.get("outcome_type", {})
+        aggregation = a.get("stat_aggregation", {})
+        pregame = a.get("pregame_information_edge", {})
+        smtype = a.get("sports_market_type", {})
 
         verdict = TriageVerdict(
             market_slug=slug,
+            is_sports=sports,
             federal_policy_outcome=noul("federal_policy_outcome"),
             defense_or_military=noul("defense_or_military"),
             us_election_or_appointment=noul("us_election_or_appointment"),
@@ -325,6 +341,14 @@ class JevTriage:
             research_confidence=float(research.get("confidence", 0.0)),
             outcome_type=str(otype.get("choice", "unknown")),
             outcome_type_confidence=float(otype.get("confidence", 0.0)),
+            stat_aggregation=float(aggregation.get("score", 0.0)),
+            stat_aggregation_confidence=float(aggregation.get("confidence", 0.0)),
+            pregame_information_edge=float(pregame.get("score", 0.0)),
+            pregame_information_edge_confidence=float(
+                pregame.get("confidence", 0.0)
+            ),
+            sports_market_type=str(smtype.get("choice", "unknown")),
+            sports_market_type_confidence=float(smtype.get("confidence", 0.0)),
             latency_ms=latency_ms,
             input_tokens=usage.get("input_tokens", 0),
             output_tokens=usage.get("output_tokens", 0),
@@ -356,6 +380,19 @@ def compute_gate_score(v: TriageVerdict, gate: GateThresholds) -> float:
     probabilities combined by weights that live in code and can be
     reviewed, rather than blended inside a single broad question.
     """
+    if v.is_sports:
+        agg = min(max(v.stat_aggregation, 0.0) / 2.0, 1.0)
+        pre = min(max(v.pregame_information_edge, 0.0) / 2.0, 1.0)
+        w = (gate.w_stat_aggregation + gate.w_pregame_information_edge
+             + gate.w_objective_resolution_sports)
+        raw = (
+            gate.w_stat_aggregation * agg
+            + gate.w_pregame_information_edge * pre
+            + gate.w_objective_resolution_sports * v.objective_resolution
+        ) / w
+        raw -= gate.sports_market_type_penalty.get(v.sports_market_type, 0.15)
+        return round(max(raw, 0.0), 4)
+
     research = min(max(v.research_would_help, 0.0) / 2.0, 1.0)
     w = gate.w_research_would_help + gate.w_objective_resolution + gate.w_self_contained
     raw = (
@@ -385,13 +422,22 @@ def apply_gate(v: TriageVerdict, gate: GateThresholds) -> TriageVerdict:
         v.veto_reason = f"restricted:{which[0]}={which[1]:.3f} > {gate.max_restricted}"
         return v
 
-    # 2. Disqualifying floors.
+    # 2. Disqualifying floors. objective_resolution is asked in both
+    #    question sets; the second floor differs, because
+    #    research_would_help is never asked on a sports market and would
+    #    sit at its 0.0 default and veto every one of them.
     if v.objective_resolution < gate.floor_objective_resolution:
         v.escalate = False
         v.gate_score = 0.0
         v.veto_reason = f"subjective_resolution={v.objective_resolution:.3f}"
         return v
-    if v.research_would_help < gate.floor_research_would_help:
+    if v.is_sports:
+        if v.stat_aggregation < gate.floor_stat_aggregation:
+            v.escalate = False
+            v.gate_score = 0.0
+            v.veto_reason = f"too_discrete={v.stat_aggregation:.3f}"
+            return v
+    elif v.research_would_help < gate.floor_research_would_help:
         v.escalate = False
         v.gate_score = 0.0
         v.veto_reason = f"research_wont_help={v.research_would_help:.3f}"
