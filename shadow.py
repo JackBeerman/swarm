@@ -203,6 +203,7 @@ async def collect(
     events: int = 50,
     cooldown_hours: float = 20.0,
     tags: "tuple[str, ...] | None" = None,
+    min_hours_to_event: float | None = None,
 ) -> None:
     """
     One sweep. Triage only. No orders, no Tier 2/3.
@@ -219,7 +220,15 @@ async def collect(
     # --min-volume overrides the structural floor rather than a query
     # parameter the gateway ignores. Volume is derived from the quote, so
     # it cannot be applied before the bbo fetch.
-    limits = StructuralLimits(min_volume_usd=min_volume)
+    # --min-hours overrides the research window for THIS run only; the
+    # default in questions.py is untouched. The 6h default was set for
+    # general markets with a Tier 2/3 research step ahead of them. For a
+    # pre-game sweep run the morning of, kickoff is ~4h out, and 6h
+    # rejects the entire early slate as "too soon".
+    limit_kwargs: dict[str, Any] = {"min_volume_usd": min_volume}
+    if min_hours_to_event is not None:
+        limit_kwargs["min_hours_to_close"] = min_hours_to_event
+    limits = StructuralLimits(**limit_kwargs)
     seen = skipped = 0
 
     skip = recently_seen(conn, cooldown_hours)
@@ -605,6 +614,10 @@ def main() -> None:
                     help="concurrent quote requests; >2 gets rate-limited")
     ap.add_argument("--cooldown-hours", type=float, default=20.0,
                     help="skip markets triaged this recently; 0 disables")
+    ap.add_argument("--min-hours", type=float, default=None,
+                    help="research window on the EVENT clock for this run; "
+                         "default keeps questions.py (6h, which rejects a "
+                         "same-morning kickoff)")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -625,6 +638,7 @@ def main() -> None:
             events=args.events,
             cooldown_hours=args.cooldown_hours,
             tags=tuple(t.strip() for t in args.tags.split(",")) if args.tags else None,
+            min_hours_to_event=args.min_hours,
         ))
     if args.analyze:
         with closing(connect()) as conn:
