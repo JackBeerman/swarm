@@ -240,12 +240,24 @@ class GameState:
 
     @property
     def seconds_left(self) -> int | None:
-        """Regulation seconds remaining. None outside Q1-Q4 or if unparsed."""
+        """
+        Regulation seconds remaining. None in overtime or if unparsed.
+
+        Breaks are real periods on the wire -- "End Q1" was the first
+        value the live loop saw -- and the clock is meaningless during
+        them, so they map to the START of the next quarter rather than
+        returning None and going quiet for the whole break.
+        """
         if self.state == "finished":
             return 0
-        idx = NFL_PERIODS.get(self.period or "")
+        p = (self.period or "").strip()
+        breaks = {"End Q1": 3, "End Q2": 2, "Halftime": 2, "Half": 2,
+                  "HT": 2, "End Q3": 1}
+        if p in breaks:
+            return breaks[p] * NFL_PERIOD_S
+        idx = NFL_PERIODS.get(p)
         if idx is None or self.clock_s is None:
-            return None
+            return None          # OT, or an unrecognised period string
         return (3 - idx) * NFL_PERIOD_S + self.clock_s
 
     @property
