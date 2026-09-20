@@ -47,6 +47,7 @@ from adapters import (  # noqa: E402
     PriceTracker,
     game_state,
     iter_event_markets,
+    listed_mid,
     main_lines_first,
     normalize_bbo,
     normalize_market,
@@ -186,6 +187,125 @@ class LiveFeed:
                 f"{len(self.verdicts)} classified")
 
 
+# --------------------------------------------------------------------------
+# Game state: REST, polled. Verified live 2026-09-20: `live`, `period`,
+# `score` and `elapsed` are on the event and move between polls ~20s
+# apart (elapsed 15:00 -> 14:45 -> 14:42), each call 1.6-3.3s. Enough for
+# a first version; no external feed needed.
+# --------------------------------------------------------------------------
+
+#: NFL regulation. Other sports get their own table when they get a
+#: fair-value model; until then GameState reports seconds_left=None.
+NFL_PERIODS = {"Q1": 0, "Q2": 1, "Q3": 2, "Q4": 3}
+NFL_PERIOD_S = 15 * 60
+
+
+def _parse_score(s: str | None) -> tuple[int, int] | None:
+    """'21-17' -> (21, 17). Order is the exchange's (typically away-home)."""
+    if not s or "-" not in s:
+        return None
+    try:
+        a, b = s.split("-", 1)
+        return int(a), int(b)
+    except ValueError:
+        return None
+
+
+def _parse_clock(s: str | None) -> int | None:
+    """'14:45' -> 885 seconds remaining in the period."""
+    if not s or ":" not in s:
+        return None
+    try:
+        m, sec = s.split(":", 1)
+        return int(m) * 60 + int(sec)
+    except ValueError:
+        return None
+
+
+class GameState:
+    """A snapshot of one game, with the arithmetic the tick loop needs."""
+
+    def __init__(self, ev: dict[str, Any]) -> None:
+        self.slug = ev.get("slug")
+        self.period = ev.get("period")
+        self.score = _parse_score(ev.get("score"))
+        self.clock_s = _parse_clock(ev.get("elapsed"))
+        self.live = bool(ev.get("live"))
+        self.state = game_state({"period": self.period})
+        self.at = time.time()
+
+    @property
+    def points(self) -> int | None:
+        return None if self.score is None else self.score[0] + self.score[1]
+
+    @property
+    def seconds_left(self) -> int | None:
+        """Regulation seconds remaining. None outside Q1-Q4 or if unparsed."""
+        if self.state == "finished":
+            return 0
+        idx = NFL_PERIODS.get(self.period or "")
+        if idx is None or self.clock_s is None:
+            return None
+        return (3 - idx) * NFL_PERIOD_S + self.clock_s
+
+    @property
+    def fraction_played(self) -> float | None:
+        s = self.seconds_left
+        return None if s is None else 1.0 - s / (4 * NFL_PERIOD_S)
+
+    def __str__(self) -> str:
+        return (f"{self.period} {self.clock_s if self.clock_s is not None else '?'}s "
+                f"score={self.score} pts={self.points} left={self.seconds_left}s")
+
+
+async def poll_game(pm: Any, game_slug: str) -> GameState | None:
+    """One REST read of the event. The slug filter is honoured."""
+    page = await pm.events.list({"limit": 5, "closed": False, "slug": [game_slug]})
+    for ev in page.get("events", []) or []:
+        if ev.get("slug") == game_slug:
+            return GameState(ev)
+    return None
+
+
+def total_fair_value(line: float, gs: GameState, pregame_total: float | None) -> float | None:
+    """
+    P(final total > line), from points so far and time left. Arithmetic.
+
+    Expected remaining points = (pregame total or league-average pace)
+    scaled by the fraction of the game left; remaining points are treated
+    as Poisson-ish with that mean, which is crude but honest about being
+    crude. This is a comparison the model must not be asked to make: it
+    is a calculation, and calculations live in code (CLAUDE.md).
+
+    Returns None when the game clock is unavailable.
+    """
+    import math
+    if gs.points is None or gs.seconds_left is None:
+        return None
+    frac_left = gs.seconds_left / (4 * NFL_PERIOD_S)
+    base = pregame_total if pregame_total else 44.0     # NFL-ish average
+    mu = max(base * frac_left, 0.05)
+    need = line - gs.points                              # points still needed
+    if need < 0:
+        return 1.0                                        # already over
+    # P(X > need) for X ~ Poisson(mu); lines are x.5 so > is >= floor+1
+    k = int(math.floor(need))
+    cdf = sum(math.exp(-mu) * mu ** i / math.factorial(i) for i in range(k + 1))
+    return max(0.0, min(1.0, 1.0 - cdf))
+
+
+def total_line_from_slug(slug: str) -> float | None:
+    """'tsc-nfl-phi-ten-2026-09-20-total-39pt5' -> 39.5. Only game totals."""
+    if "-total-" not in slug or "-1h-" in slug or "-2h-" in slug \
+            or "-1q-" in slug or "-2q-" in slug or "-3q-" in slug or "-4q-" in slug:
+        return None
+    tail = slug.rsplit("-total-", 1)[-1]
+    try:
+        return float(tail.replace("pt", "."))
+    except ValueError:
+        return None
+
+
 async def markets_for_game(pm: Any, game_slug: str, max_markets: int) -> list[str]:
     """
     The game's open markets, via the events endpoint the rest of the
@@ -232,14 +352,27 @@ async def run(args: argparse.Namespace) -> int:
         return 3
 
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    pm = AsyncPolymarketUS()           # kept open for game-state polling
+    await pm.__aenter__()
     if args.markets:
         slugs = [s.strip() for s in args.markets.split(",") if s.strip()]
         if not args.no_jev:
             log.warning("--markets gives no event context; skipping Jev "
                         "classification (use --game for that)")
     else:
-        async with AsyncPolymarketUS() as pm:
-            slugs, pairs = await markets_for_game(pm, args.game, args.max_markets)
+        slugs, pairs = await markets_for_game(pm, args.game, args.max_markets)
+
+    # The pre-game main total: the game-total line listed nearest 0.50.
+    # It anchors the pace estimate in total_fair_value().
+    pregame_total: float | None = None
+    best = 1.0
+    for m, _ in pairs:
+        line = total_line_from_slug(m.get("slug") or "")
+        mid = listed_mid(m)
+        if line is not None and mid is not None and abs(mid - 0.5) < best:
+            best, pregame_total = abs(mid - 0.5), line
+    if pregame_total is not None:
+        log.info("pre-game main total ~ %.1f", pregame_total)
 
     feed = LiveFeed(key_id, secret)
     await feed.start(slugs)
@@ -255,12 +388,48 @@ async def run(args: argparse.Namespace) -> int:
             # research floor falls back to the settlement clock (event is
             # in the past), which is weeks out and passes.
             await feed.classify(jev, pairs, StructuralLimits(allow_in_play=True))
+        # Game-state poll joined to the live ticks. ~15s is well inside
+        # the ~20s at which REST elapsed was seen to move, and one call.
+        last_poll = 0.0
+        gs: GameState | None = None
         while time.time() < t_end:
-            await asyncio.sleep(5)
+            if args.game and time.time() - last_poll >= args.poll:
+                last_poll = time.time()
+                try:
+                    gs = await poll_game(pm, args.game)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("game poll failed: %s", str(exc)[:100])
+                if gs is not None:
+                    log.info("GAME %s", gs)
+                    if gs.state == "finished":
+                        log.info("game over; stopping")
+                        break
+                    # Fair value vs market, for the one market type we
+                    # can compute in code today: the game total.
+                    for slug, bbo in feed.last.items():
+                        line = total_line_from_slug(slug)
+                        if line is None:
+                            continue
+                        fv = total_fair_value(line, gs, pregame_total)
+                        mid = _mid(bbo)
+                        b, a = bbo.get("bid"), bbo.get("ask")
+                        if fv is None or mid is None or b is None or a is None \
+                                or (a - b) > feed.max_spread:
+                            continue
+                        v = feed.verdicts.get(slug)
+                        edge = fv - a          # buy-YES edge at the ask
+                        flag = "  <-- EDGE" if edge >= 0.10 else ""
+                        log.info("  total %5.1f  fv=%.3f  mkt=%.3f/%.3f  "
+                                 "edge(yes@ask)=%+.3f%s%s",
+                                 line, fv, b, a, edge,
+                                 f"  [gate {v.gate_score:.2f}]" if v else "",
+                                 flag)
+            await asyncio.sleep(1.0)
     finally:
         await feed.stop()
         if jev is not None:
             await jev.aclose()
+        await pm.__aexit__(None, None, None)
         log.info("%s", feed.report())
         # what the tracker now knows: real deltas per market
         for slug in sorted(feed.last):
@@ -281,6 +450,9 @@ def main() -> int:
     ap.add_argument("--minutes", type=float, default=10.0)
     ap.add_argument("--no-jev", action="store_true",
                     help="feed only; skip the once-per-market classification")
+    ap.add_argument("--poll", type=float, default=15.0,
+                    help="seconds between game-state polls (REST elapsed was "
+                         "seen to move at ~20s)")
     args = ap.parse_args()
     if not args.game and not args.markets:
         ap.error("--game or --markets is required")
