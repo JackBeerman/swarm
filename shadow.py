@@ -31,20 +31,30 @@ from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from polymarket_us import AsyncPolymarketUS
+# Before `from swarm import ...`: swarm.py reads TYPESAFE_DEFAULT_MODEL at
+# import time, so the pin in .env is ignored unless it is loaded first.
+# Without this, `python shadow.py --collect` from a fresh terminal either
+# raises on a missing TYPESAFE_API_KEY or -- worse -- runs against
+# jev-latest, which floats, and quietly recalibrates every threshold.
+from config import load_dotenv_if_present
+
+load_dotenv_if_present()
+
+from polymarket_us import AsyncPolymarketUS  # noqa: E402
 
 from adapters import (
     PriceTracker,
     QuoteFetcher,
     DEFAULT_TAG_MIX,
     fetch_events_across_tags,
+    derive_notionals,
     interleave_by_event,
     iter_event_markets,
     normalize_market,
 )
 from schemas import TriageVerdict
 from questions import GateThresholds, StructuralLimits
-from swarm import JevTriage, apply_gate, price_triage
+from swarm import JevTriage, _hours_until, apply_gate, price_triage
 
 log = logging.getLogger("shadow")
 
@@ -80,6 +90,18 @@ CREATE TABLE IF NOT EXISTS verdicts (
     latency_ms               REAL,
     input_tokens             INTEGER,
     output_tokens            INTEGER,
+    -- what --score and later analysis need and cannot reconstruct.
+    -- volume/liquidity are derived from the quote at triage time and
+    -- exist nowhere else; model is which Jev served the answer, since an
+    -- unpinned id floats; period/hours_to_event prove pre-game vs in-play.
+    liquidity_usd            REAL,
+    bid_shares               REAL,
+    ask_shares               REAL,
+    model                    TEXT,
+    outcome                  TEXT,
+    event_title              TEXT,
+    period                   TEXT,
+    hours_to_event           REAL,
     -- resolution is backfilled later; this is what makes the data
     -- worth anything. A gate you never scored against outcomes is
     -- just a rate limiter.
@@ -109,6 +131,14 @@ _MIGRATIONS = {
     "stat_aggregation": "REAL",
     "pregame_information_edge": "REAL",
     "sports_market_type": "TEXT",
+    "liquidity_usd": "REAL",
+    "bid_shares": "REAL",
+    "ask_shares": "REAL",
+    "model": "TEXT",
+    "outcome": "TEXT",
+    "event_title": "TEXT",
+    "period": "TEXT",
+    "hours_to_event": "REAL",
 }
 
 
@@ -138,7 +168,12 @@ def recently_seen(conn: sqlite3.Connection, hours: float) -> set[str]:
         return set()
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     rows = conn.execute(
-        "SELECT DISTINCT market_slug FROM verdicts WHERE seen_at >= ?",
+        # Structural rejects never reached Jev, so re-checking them costs
+        # only a quote -- and a Saturday-night prop book rejected as
+        # spread=0.06 is exactly the one that tightens by Sunday morning.
+        # Cooling those down skipped tomorrow's best candidates.
+        """SELECT DISTINCT market_slug FROM verdicts
+           WHERE seen_at >= ? AND structural_reject IS NULL""",
         (cutoff,),
     ).fetchall()
     return {r["market_slug"] for r in rows}
@@ -146,6 +181,11 @@ def recently_seen(conn: sqlite3.Connection, hours: float) -> set[str]:
 
 def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -> None:
     bid, ask = bbo.get("bid"), bbo.get("ask")
+    # The normalized market carries volume_usd=None by design (the field
+    # is not on the wire); it is derived from the quote. Reading it off the
+    # market wrote NULL into every row and made --sweep of the volume floor
+    # impossible offline.
+    n = derive_notionals(bbo)
     conn.execute(
         """INSERT INTO verdicts (
             seen_at, market_slug, question, volume_usd, bid, ask, spread,
@@ -157,13 +197,16 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             sports_market_type,
             structural_reject,
             escalate, veto_reason, gate_score, latency_ms,
-            input_tokens, output_tokens
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            input_tokens, output_tokens,
+            liquidity_usd, bid_shares, ask_shares, model, outcome,
+            event_title, period, hours_to_event
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                  ?,?,?,?,?,?,?,?)""",
         (
             datetime.now(timezone.utc).isoformat(),
             v.market_slug,
             market.get("question"),
-            market.get("volume_usd"),
+            n["volume_usd"],
             bid,
             ask,
             (float(ask) - float(bid)) if bid and ask else None,
@@ -187,6 +230,14 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             v.latency_ms,
             v.input_tokens,
             v.output_tokens,
+            n["liquidity_usd"],
+            bbo.get("bid_shares"),
+            bbo.get("ask_shares"),
+            v.model,
+            market.get("outcome"),
+            market.get("event_title"),
+            market.get("period"),
+            _hours_until(market.get("event_at")),
         ),
     )
     conn.commit()
@@ -196,6 +247,30 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
 # collection
 # --------------------------------------------------------------------------
 
+def _price_band_reject(market: dict[str, Any], limits: StructuralLimits) -> bool:
+    """
+    True when the market's listed prices put it outside the price band on
+    the same side -- an extreme line the structural filter would reject
+    after a paced quote. Conservative on purpose: anything ambiguous or
+    unparseable goes to the quote, never rejected here.
+
+    `outcomePrices` is a JSON STRING on the wire ('["0.9850","0.9900"]'),
+    not a list -- the same decimal-string convention as Amount.
+    """
+    raw = market.get("outcomePrices")
+    try:
+        vals = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        prices = [float(v) for v in vals][:2]
+    except (TypeError, ValueError):
+        return False
+    if len(prices) < 2:
+        return False
+    lo, hi = limits.min_price, limits.max_price
+    both_high = all(p > hi for p in prices)
+    both_low = all(p < lo for p in prices)
+    return both_high or both_low
+
+
 async def collect(
     min_volume: float = 250.0,
     limit: int = 200,
@@ -204,6 +279,7 @@ async def collect(
     cooldown_hours: float = 20.0,
     tags: "tuple[str, ...] | None" = None,
     min_hours_to_event: float | None = None,
+    start_window_hours: float | None = None,
 ) -> None:
     """
     One sweep. Triage only. No orders, no Tier 2/3.
@@ -246,19 +322,46 @@ async def collect(
         # sweep came back `contested_event`, which makes a threshold
         # sweep a cliff rather than a curve.
         tag_mix = tags or DEFAULT_TAG_MIX
+        # A start-time window is what actually selects THIS week's games.
+        # The nfl tag page in default order is 25 season futures and awards
+        # -- MVP, division winners, sacks leader -- and none of Sunday's 15
+        # game events. Verified live: startTimeMin/Max around the weekend
+        # returns exactly the game events, all period=NS, startTime=kickoff.
+        extra: dict[str, Any] = {}
+        if start_window_hours is not None:
+            now = datetime.now(timezone.utc)
+            extra = {
+                "startTimeMin": (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "startTimeMax": (now + timedelta(hours=start_window_hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
         evs = await fetch_events_across_tags(
-            pm, tags=tag_mix, per_tag=max(1, events // len(tag_mix))
+            pm, tags=tag_mix, per_tag=max(1, events // len(tag_mix)),
+            extra=extra,
         )
         pairs = iter_event_markets({"events": evs})
         total = len(pairs)
         # Interleave before truncating. Events flatten into long runs of
         # near-identical legs, so the head of the list is one sport --
         # a first sweep took 40 markets and every one was MLB.
-        pairs = interleave_by_event(
-            [p for p in pairs if p[0].get("slug") not in skip]
-        )[:limit]
-        log.info("%d events across tags -> %d open markets -> %d this sweep",
-                 len(evs), total, len(pairs))
+        # Pre-screen on the events payload BEFORE spending a paced quote.
+        # A game event carries ~800 markets, and the ones listed first are
+        # extreme alt-lines -- "cover 17.5" at 0.985/0.99 -- that the price
+        # band rejects anyway. Without this, a 200-quote budget goes almost
+        # entirely to 0.98 lines and the main lines near 0.50 are never
+        # reached. `outcomePrices` is a JSON string of two prices; whether
+        # they are [bid, ask] of the primary side or [yes, no] is not yet
+        # confirmed, so this rejects only when BOTH sit outside the band on
+        # the same side, which is correct under either reading.
+        prescreened = [p for p in pairs if p[0].get("slug") not in skip]
+        kept = []
+        for m, ev in prescreened:
+            if _price_band_reject(m, limits):
+                continue
+            kept.append((m, ev))
+        pairs = interleave_by_event(kept)[:limit]
+        log.info("%d events across tags -> %d open -> %d past prescreen "
+                 "-> %d this sweep",
+                 len(evs), total, len(kept), len(pairs))
 
         quotes = QuoteFetcher(pm, concurrency=concurrency)
 
@@ -357,14 +460,25 @@ async def backfill(limit: int = 500, pause: float = 2.0) -> None:
                 continue
 
             settlement = res.get("settlement")
-            if settlement is None:
+            try:
+                sval = float(settlement) if settlement is not None else None
+            except (TypeError, ValueError):
+                sval = None
+            if sval is None or sval not in (0.0, 1.0):
+                # A push on a whole-number line (settlement 0.5) or an
+                # unexpected shape. int(0.5) would silently record a loss;
+                # a non-numeric string would raise and abort the loop.
+                # Record nothing and move on.
                 pending += 1
+                if settlement is not None:
+                    log.warning("non-binary settlement %r for %s; skipped",
+                                settlement, slug)
             else:
                 conn.execute(
                     """UPDATE verdicts
                        SET resolved_outcome = ?, resolved_at = ?
                        WHERE market_slug = ? AND resolved_outcome IS NULL""",
-                    (str(int(settlement)),
+                    (str(int(sval)),
                      datetime.now(timezone.utc).isoformat(), slug),
                 )
                 conn.commit()
@@ -396,7 +510,8 @@ def score(db: str = DB_PATH) -> None:
                       resolved_outcome, veto_reason
                FROM verdicts
                WHERE resolved_outcome IS NOT NULL
-                 AND bid IS NOT NULL AND ask IS NOT NULL"""
+                 AND bid IS NOT NULL AND ask IS NOT NULL
+                 AND structural_reject IS NULL"""
         ).fetchall()
 
     print("=" * 62)
@@ -461,10 +576,23 @@ def _rescore(rows: list[sqlite3.Row], gate: GateThresholds) -> list[TriageVerdic
                                      structural_reject=r["structural_reject"],
                                      veto_reason=f"structural: {r['structural_reject']}"))
             continue
+        keys = r.keys()
         v = TriageVerdict(
             market_slug=r["market_slug"],
             outcome_type=r["outcome_type"] or "unknown",
             outcome_type_confidence=r["outcome_type_confidence"] or 0.0,
+            # The sports fields MUST be carried. Without them every stored
+            # sports row re-scored as non-sports: research_would_help sat
+            # at its 0.0 default, hit the floor, and --analyze reported ~0%
+            # escalation with research_wont_help as the top reason -- the
+            # database was right and the analysis was wrong.
+            is_sports=bool(r["is_sports"]) if "is_sports" in keys else False,
+            stat_aggregation=(r["stat_aggregation"] or 0.0)
+            if "stat_aggregation" in keys else 0.0,
+            pregame_information_edge=(r["pregame_information_edge"] or 0.0)
+            if "pregame_information_edge" in keys else 0.0,
+            sports_market_type=(r["sports_market_type"] or "unknown")
+            if "sports_market_type" in keys else "unknown",
             **{f: (r[f] or 0.0) for f in FIELDS},
         )
         out.append(apply_gate(v, gate))
@@ -618,6 +746,10 @@ def main() -> None:
                     help="research window on the EVENT clock for this run; "
                          "default keeps questions.py (6h, which rejects a "
                          "same-morning kickoff)")
+    ap.add_argument("--start-window", type=float, default=None,
+                    help="only events starting within this many hours "
+                         "(startTimeMin/Max). The nfl tag page alone is "
+                         "season futures; 48 selects the weekend's games")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -639,6 +771,7 @@ def main() -> None:
             cooldown_hours=args.cooldown_hours,
             tags=tuple(t.strip() for t in args.tags.split(",")) if args.tags else None,
             min_hours_to_event=args.min_hours,
+            start_window_hours=args.start_window,
         ))
     if args.analyze:
         with closing(connect()) as conn:

@@ -1031,3 +1031,21 @@ async def test_every_sports_market_type_can_reach_the_threshold():
         assert 1.0 - penalty >= g.min_gate_score, (
             f"{name} cannot reach min_gate_score even when perfect"
         )
+
+
+@respx.mock
+async def test_missing_jev_answer_raises_rather_than_vetoing():
+    """
+    Every parser defaults an absent answer to 0.0, and 0.0 is a confident
+    veto that looks like a real judgment in the database. A dropped
+    stat_aggregation would floor every sports market as too_discrete.
+    """
+    body = sports_jev_body()
+    del body["answers"]["stat_aggregation"]
+    respx.post("https://api.typesafe.ai/v1/systemone").mock(
+        return_value=httpx.Response(200, json=body)
+    )
+    jev = sw.JevTriage(api_key="k")
+    with pytest.raises(RuntimeError, match="stat_aggregation"):
+        await jev.evaluate(SPORTS_MARKET, BBO)
+    await jev.aclose()

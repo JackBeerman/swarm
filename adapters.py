@@ -245,6 +245,7 @@ async def fetch_events_across_tags(
     tags: "tuple[str, ...] | list[str]" = DEFAULT_TAG_MIX,
     per_tag: int = 10,
     pause: float = 1.0,
+    extra: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
     One events.list per tag, de-duplicated by event slug.
@@ -262,7 +263,8 @@ async def fetch_events_across_tags(
     for tag in tags:
         try:
             page = await pm.events.list(
-                {"limit": per_tag, "closed": False, "tagSlug": tag}
+                {"limit": per_tag, "closed": False, "tagSlug": tag,
+                 **(extra or {})}
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("tag %s failed, skipping: %s", tag, exc)
@@ -360,12 +362,14 @@ class QuoteFetcher:
         min_interval: float = 1.2,
         max_retries: int = 3,
         backoff_base: float = 1.5,
+        block_pause: float = 30.0,
     ):
         self._pm = pm
         self._sem = asyncio.Semaphore(concurrency)
         self._min_interval = min_interval
         self._max_retries = max_retries
         self._backoff_base = backoff_base
+        self._block_pause = block_pause
         self._lock = asyncio.Lock()
         self._next_at = 0.0
         self.attempts = 0
@@ -390,6 +394,19 @@ class QuoteFetcher:
                 try:
                     raw = await self._pm.markets.bbo(slug)
                 except Exception as exc:  # noqa: BLE001 - transport or HTML
+                    if type(exc).__name__ in ("RateLimitError",
+                                              "PermissionDeniedError"):
+                        # A Cloudflare block is global, not per-task. Without
+                        # this, the blocked task backs off while the others
+                        # keep hitting the endpoint at full pace and prolong
+                        # the block. Push the shared floor so everyone waits.
+                        async with self._lock:
+                            self._next_at = max(
+                                self._next_at,
+                                time.monotonic() + self._block_pause,
+                            )
+                        log.warning("quote endpoint blocked; pausing all "
+                                    "requests %.0fs", self._block_pause)
                     if attempt == self._max_retries:
                         self.failures += 1
                         log.debug("bbo %s failed after %d attempts: %s",

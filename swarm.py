@@ -318,6 +318,18 @@ class JevTriage:
         a = body.get("answers", {})
         usage = body.get("usage", {})
 
+        # A missing answer must not become a confident veto. Every parser
+        # below defaults an absent key to 0.0, and 0.0 is indistinguishable
+        # from a real judgment in the database: a dropped `stat_aggregation`
+        # would floor every sports market as too_discrete=0.000 and look
+        # like the model said so. Raise instead; the caller logs and skips
+        # without storing.
+        missing = set(questions) - set(a)
+        if missing:
+            raise RuntimeError(
+                f"Jev returned no answer for {sorted(missing)} on {slug}"
+            )
+
         def noul(name: str) -> float:
             return float(a.get(name, {}).get("noul", 0.0))
 
