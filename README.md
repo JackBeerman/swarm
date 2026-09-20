@@ -95,6 +95,14 @@ not a bug. `verify_account.py` exits 2 and says so when it sees it.
 Paper mode also needs `ANTHROPIC_API_KEY`: Tier 2/3 and web search never
 fire in shadow, so nothing before paper exercises it.
 
+Observed on the first live fill (2 shares, cost $1.78): the balance
+record showed `assetNotional = 0` while the position's `cashValue` was
+$1.76. The risk engine takes the more conservative mark, so it read NLV
+as cash-only, $98.21 — safe direction, but `assetNotional` lags or does
+not cover this position type. Watch it once more positions exist. The
+order-create response also carries `executions = 0` on an order that is
+already `FILLED`; read the order back by id for the truth.
+
 Full pipeline, real money tracked, no orders placed. This is where you
 find out whether the escalated markets are *good*, not just few.
 

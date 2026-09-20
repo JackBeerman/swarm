@@ -388,17 +388,30 @@ async def place_test_order(cfg: Config, slug: str, side: str, qty: int) -> int:
         except Exception as exc:
             log.error("order failed: %s", exc)
             return EXIT_CONFIG
-        log.info("LIVE order id=%s executions=%s",
-                 res.get("id"), len(res.get("executions") or []))
+        oid = res.get("id")
+        # The create response does not carry fills: the first live test
+        # returned executions=0 on an order that was already FILLED. Read
+        # the order back by id; `state` and `cumQuantity` are the truth.
+        # Positions populate asynchronously after the fill, so wait.
+        await asyncio.sleep(1.5)
+        try:
+            back = await pm.orders.retrieve(oid)
+            od = back.get("order", back)
+            log.info("LIVE order id=%s state=%s filled=%s/%s @ %s",
+                     oid, od.get("state"), od.get("cumQuantity"),
+                     od.get("quantity"), (od.get("price") or {}).get("value"))
+        except Exception as exc:
+            log.warning("order placed (id=%s) but read-back failed: %s", oid, exc)
 
         pos = await pm.portfolio.positions()
         p = (pos.get("positions") or {}).get(slug)
         if p:
-            log.info("position now: net=%s cashValue=%s",
-                     p.get("netPosition"), p.get("cashValue"))
+            log.info("position now: net=%s cost=%s cashValue=%s",
+                     p.get("netPosition"), (p.get("cost") or {}).get("value"),
+                     (p.get("cashValue") or {}).get("value"))
         else:
-            log.warning("no position visible yet for %s (IOC may not have "
-                        "filled, or the book moved); check open orders", slug)
+            log.warning("no position visible for %s -- if state above is "
+                        "not FILLED, the IOC was cancelled unfilled", slug)
     return EXIT_OK
 
 
