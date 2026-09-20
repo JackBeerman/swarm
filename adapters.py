@@ -27,6 +27,12 @@ disagree, the wire wins:
     market["oneHourPrice..."] -- does not exist --
     volumeNumMin (filter)     volumeMin -- accepted and SILENTLY IGNORED
 
+The websocket's `marketDataLite` payload (verified live 2026-09-20) carries
+the same field set as the REST `marketData` envelope -- bestBid/bestAsk/
+lastTradePx/sharesTraded/openInterest/bidShares/askShares/state -- not
+the three fields the SDK stub `_MarketDataLitePayload` declares. Parse
+it with normalize_bbo({"marketData": payload}); nothing else is needed.
+
 One more, and it is the one that produces zero markets rather than wrong
 ones: `active` and `closed` are orthogonal. A resolved market is
 `active=True, closed=True, status="MARKET_STATUS_RESOLVED"`. Querying
@@ -49,6 +55,7 @@ Two consequences worth internalizing:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections import deque
@@ -304,6 +311,62 @@ def game_state(market: dict[str, Any]) -> str:
     if p in PERIOD_NOT_STARTED:
         return "not_started"
     return "in_play"
+
+
+def price_band_reject(market: dict[str, Any], min_price: float = 0.05,
+                      max_price: float = 0.95) -> bool:
+    """
+    True when the market's listed prices put it outside the price band on
+    the same side -- an extreme line the structural filter would reject
+    after a paced quote. Conservative on purpose: anything ambiguous or
+    unparseable is NOT rejected here; it goes to the quote.
+
+    `outcomePrices` is a JSON STRING on the wire ('["0.9850","0.9900"]'),
+    not a list -- the same decimal-string convention as Amount.
+    """
+    raw = market.get("outcomePrices")
+    try:
+        vals = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        prices = [float(v) for v in vals][:2]
+    except (TypeError, ValueError):
+        return False
+    if len(prices) < 2:
+        return False
+    return all(p > max_price for p in prices) or all(p < min_price for p in prices)
+
+
+def listed_mid(market: dict[str, Any]) -> float | None:
+    """Mid of the two listed outcomePrices, or None. Cheap; no quote."""
+    raw = market.get("outcomePrices")
+    try:
+        vals = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        p = [float(v) for v in vals][:2]
+    except (TypeError, ValueError):
+        return None
+    return (p[0] + p[1]) / 2.0 if len(p) == 2 else None
+
+
+def main_lines_first(
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+    min_price: float = 0.05,
+    max_price: float = 0.95,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """
+    Prescreen extremes, then order by closeness to 0.50.
+
+    A game event lists ~800 markets extreme-first: "cover 17.5" at 0.985,
+    "4th down conversions over 0.5" at 0.98. Taking the head of that list
+    -- as the first in-play feed did -- subscribes to thirty markets that
+    will barely tick all game. The main lines (game total, spread,
+    moneyline) and the contested props sit near 0.50, and those are the
+    ones whose price actually moves with the score.
+    """
+    kept = [(m, e) for m, e in pairs if not price_band_reject(m, min_price, max_price)]
+
+    def key(pe: tuple[dict[str, Any], dict[str, Any]]) -> float:
+        mid = listed_mid(pe[0])
+        return abs(mid - 0.5) if mid is not None else 0.49  # unknown: near the back
+    return sorted(kept, key=key)
 
 
 def interleave_by_event(

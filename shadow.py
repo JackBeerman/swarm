@@ -49,6 +49,7 @@ from adapters import (
     fetch_events_across_tags,
     derive_notionals,
     interleave_by_event,
+    price_band_reject,
     iter_event_markets,
     normalize_market,
 )
@@ -248,27 +249,8 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
 # --------------------------------------------------------------------------
 
 def _price_band_reject(market: dict[str, Any], limits: StructuralLimits) -> bool:
-    """
-    True when the market's listed prices put it outside the price band on
-    the same side -- an extreme line the structural filter would reject
-    after a paced quote. Conservative on purpose: anything ambiguous or
-    unparseable goes to the quote, never rejected here.
-
-    `outcomePrices` is a JSON STRING on the wire ('["0.9850","0.9900"]'),
-    not a list -- the same decimal-string convention as Amount.
-    """
-    raw = market.get("outcomePrices")
-    try:
-        vals = json.loads(raw) if isinstance(raw, str) else (raw or [])
-        prices = [float(v) for v in vals][:2]
-    except (TypeError, ValueError):
-        return False
-    if len(prices) < 2:
-        return False
-    lo, hi = limits.min_price, limits.max_price
-    both_high = all(p > hi for p in prices)
-    both_low = all(p < lo for p in prices)
-    return both_high or both_low
+    """Prescreen on the listed prices; lives in adapters so inplay.py shares it."""
+    return price_band_reject(market, limits.min_price, limits.max_price)
 
 
 async def collect(
