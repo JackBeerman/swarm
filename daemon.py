@@ -21,13 +21,16 @@ import logging
 import signal
 import time
 import sys
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from polymarket_us import AsyncPolymarketUS
 
 from adapters import (
     PriceTracker,
+    DEFAULT_TAG_MIX,
     QuoteFetcher,
+    fetch_events_across_tags,
     interleave_by_event,
     iter_event_markets,
     normalize_market,
@@ -52,8 +55,19 @@ class Daemon:
                  cooldown_hours: float = 20.0,
                  markets_per_cycle: int = 150,
                  events_per_cycle: int = 50,
-                 quote_concurrency: int = 2):
+                 quote_concurrency: int = 2,
+                 tags: "tuple[str, ...] | None" = None,
+                 start_window_hours: float | None = None,
+                 min_hours_to_event: float | None = None):
         self.cfg = cfg
+        # Mirrors shadow.py. Without these a paper cycle reads the default
+        # listing page -- season futures and awards, none of the weekend's
+        # games -- and the research floor (6h) rejects a same-morning
+        # kickoff. The defaults in questions.py are untouched; these are
+        # per-run.
+        self.tags = tags
+        self.start_window_hours = start_window_hours
+        self.min_hours_to_event = min_hours_to_event
         self.poll_seconds = poll_seconds
         self.once = once
         # A market is re-triaged at most once per cooldown window. Its
@@ -116,7 +130,9 @@ class Daemon:
                     budget=budget,
                     gate=GateThresholds(),
                     risk=RiskConfig(),
-                    limits=StructuralLimits(),
+                    limits=(StructuralLimits(min_hours_to_close=self.min_hours_to_event)
+                            if self.min_hours_to_event is not None
+                            else StructuralLimits()),
                 )
 
                 while not self._stop.is_set():
@@ -160,8 +176,26 @@ class Daemon:
         # `active: True` selects RESOLVED markets here -- active and closed
         # are orthogonal on this gateway. `volumeMin` is ignored. The volume
         # floor lives in StructuralLimits and is applied after the quote.
-        page = await pm.events.list({"limit": self.events_per_cycle,
-                                     "closed": False})
+        if self.tags or self.start_window_hours is not None:
+            # Same selection as shadow.py: tag pages plus a start-time
+            # window, which is what actually returns the weekend's games.
+            extra: dict[str, Any] = {}
+            if self.start_window_hours is not None:
+                now_utc = datetime.now(timezone.utc)
+                extra = {
+                    "startTimeMin": (now_utc - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "startTimeMax": (now_utc + timedelta(hours=self.start_window_hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+            tag_mix = self.tags or DEFAULT_TAG_MIX
+            evs = await fetch_events_across_tags(
+                pm, tags=tag_mix,
+                per_tag=max(1, self.events_per_cycle // len(tag_mix)),
+                extra=extra,
+            )
+            page = {"events": evs}
+        else:
+            page = await pm.events.list({"limit": self.events_per_cycle,
+                                         "closed": False})
         pairs = iter_event_markets(page)
         total = len(pairs)
 
@@ -303,6 +337,15 @@ def main() -> int:
     ap.add_argument("--events-per-cycle", type=int, default=50)
     ap.add_argument("--quote-concurrency", type=int, default=2,
                     help="concurrent quote requests; >2 gets rate-limited")
+    ap.add_argument("--tags", default=None,
+                    help="comma-separated tag slugs to sample (e.g. nfl); "
+                         "default is the general mix")
+    ap.add_argument("--start-window", type=float, default=None,
+                    help="only events starting within this many hours; "
+                         "the nfl tag page alone is season futures")
+    ap.add_argument("--min-hours", type=float, default=None,
+                    help="research window on the EVENT clock for this run; "
+                         "default keeps questions.py (6h)")
     args = ap.parse_args()
 
     try:
@@ -323,6 +366,9 @@ def main() -> int:
         markets_per_cycle=args.markets_per_cycle,
         events_per_cycle=args.events_per_cycle,
         quote_concurrency=args.quote_concurrency,
+        tags=tuple(t.strip() for t in args.tags.split(",")) if args.tags else None,
+        start_window_hours=args.start_window,
+        min_hours_to_event=args.min_hours,
     )
 
     async def runner() -> int:
