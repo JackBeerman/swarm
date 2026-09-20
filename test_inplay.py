@@ -119,3 +119,24 @@ def test_fair_value_uses_break_period_clock():
     """During a break the model must still produce a number."""
     fv = total_fair_value(40.5, _gs("End Q1", score="0-7"), 40.5)
     assert fv is not None and 0.0 < fv < 1.0
+
+
+def test_calibration_log_records_fair_value_beside_the_book(tmp_path):
+    """
+    A fair value is only worth something if it can be scored later --
+    against the book now, against settlement once the market resolves.
+    Same discipline as shadow.db.
+    """
+    conn = inplay.connect_db(str(tmp_path / "fv.db"))
+    gs = _gs("Q2", score="0-7", elapsed="13:29")
+    inplay.record_fv(conn, "nfl-phi-ten", "tsc-nfl-phi-ten-total-40pt5", 40.5,
+                     gs, 40.5, 0.39, {"bid": 0.57, "ask": 0.59}, 0.90)
+    r = conn.execute("SELECT * FROM fair_values").fetchone()
+    conn.close()
+    assert r["line"] == 40.5 and r["points"] == 7
+    assert r["seconds_left"] == 2 * NFL_PERIOD_S + 809
+    assert r["fv"] == pytest.approx(0.39)
+    assert r["bid"] == 0.57 and r["ask"] == 0.59
+    assert r["gate_score"] == 0.90
+    assert r["model"] == inplay.FV_MODEL
+    assert r["resolved_outcome"] is None, "filled by a backfill, never here"

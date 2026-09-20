@@ -32,6 +32,7 @@ import argparse
 import asyncio
 import logging
 import os
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -335,6 +336,61 @@ def total_line_from_slug(slug: str) -> float | None:
         return None
 
 
+# --------------------------------------------------------------------------
+# Calibration log. Every fair value is written next to the book it
+# disagreed with, so the model can be scored -- against the market now,
+# against settlement later -- before anyone trusts an "edge" from it.
+# Same discipline as shadow.db: a number you never scored is a guess.
+# --------------------------------------------------------------------------
+
+INPLAY_DB = os.getenv("INPLAY_DB", "inplay.db")
+
+_FV_SCHEMA = """
+CREATE TABLE IF NOT EXISTS fair_values (
+    id            INTEGER PRIMARY KEY,
+    at            TEXT NOT NULL,
+    game          TEXT NOT NULL,
+    market_slug   TEXT NOT NULL,
+    line          REAL NOT NULL,
+    period        TEXT,
+    seconds_left  INTEGER,
+    points        INTEGER,
+    anchor        REAL,
+    fv            REAL NOT NULL,
+    bid           REAL,
+    ask           REAL,
+    gate_score    REAL,
+    model         TEXT NOT NULL,
+    -- filled by a backfill once the market settles, like shadow.db
+    resolved_outcome TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_fv_slug ON fair_values(market_slug);
+"""
+
+FV_MODEL = "normal-sd13.5-sqrt"
+
+
+def connect_db(path: str = INPLAY_DB) -> sqlite3.Connection:
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(_FV_SCHEMA)
+    return conn
+
+
+def record_fv(conn: sqlite3.Connection, game: str, slug: str, line: float,
+              gs: GameState, anchor: float | None, fv: float,
+              bbo: dict[str, Any], gate_score: float | None) -> None:
+    conn.execute(
+        """INSERT INTO fair_values (at, game, market_slug, line, period,
+               seconds_left, points, anchor, fv, bid, ask, gate_score, model)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (datetime.now(timezone.utc).isoformat(), game, slug, line, gs.period,
+         gs.seconds_left, gs.points, anchor, fv, bbo.get("bid"), bbo.get("ask"),
+         gate_score, FV_MODEL),
+    )
+    conn.commit()
+
+
 async def markets_for_game(pm: Any, game_slug: str, max_markets: int) -> list[str]:
     """
     The game's open markets, via the events endpoint the rest of the
@@ -404,6 +460,7 @@ async def run(args: argparse.Namespace) -> int:
         log.info("pre-game main total ~ %.1f", pregame_total)
 
     feed = LiveFeed(key_id, secret)
+    db = connect_db()
     await feed.start(slugs)
     jev = None if (args.no_jev or not pairs) else JevTriage()
     t_end = time.time() + args.minutes * 60
@@ -453,12 +510,15 @@ async def run(args: argparse.Namespace) -> int:
                                  line, fv, b, a, edge,
                                  f"  [gate {v.gate_score:.2f}]" if v else "",
                                  flag)
+                        record_fv(db, args.game, slug, line, gs, pregame_total,
+                                  fv, bbo, v.gate_score if v else None)
             await asyncio.sleep(1.0)
     finally:
         await feed.stop()
         if jev is not None:
             await jev.aclose()
         await pm.__aexit__(None, None, None)
+        db.close()
         log.info("%s", feed.report())
         # what the tracker now knows: real deltas per market
         for slug in sorted(feed.last):
