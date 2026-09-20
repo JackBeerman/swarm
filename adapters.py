@@ -176,8 +176,10 @@ def normalize_market(
         # TWO DIFFERENT CLOCKS, and conflating them is why short-dated
         # markets looked absent. `endDate` is the SETTLEMENT DEADLINE, not
         # the event: a college football game played today carries an
-        # endDate ~332h out. The outcome is decided in hours; only the
-        # payout waits two weeks.
+        # endDate ~332h out. The outcome is decided in hours, and -- verified
+        # live 2026-09-20 -- markets.settlement() returns the result within
+        # minutes of the final. endDate is the DEADLINE by which the exchange
+        # must settle, not when it does. A backfill can run the same day.
         #
         #   settles_at  when the payout lands      -> capital-parked check
         #   event_at    when the outcome is known  -> everything else
