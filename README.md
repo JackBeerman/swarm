@@ -80,9 +80,20 @@ you do this on a sample large enough to trust.
 **2. Paper trade (weeks).**
 
 ```bash
-export POLYMARKET_KEY_ID=... POLYMARKET_SECRET_KEY=...
+# keys in .env: POLYMARKET_KEY_ID, POLYMARKET_SECRET_KEY
+python verify_account.py          # read-only; asserts the shapes the
+                                  # risk engine reads, one call, no orders
 SWARM_MODE=paper python daemon.py
 ```
+
+**Fund the account before paper mode.** An unfunded account returns
+`{"balances": []}` (verified live), the risk engine computes NLV = $0,
+and `start()` halts at NLV ≤ $10 on its first refresh — it writes
+`.halted` and exits 2 before doing anything. That is the floor working,
+not a bug. `verify_account.py` exits 2 and says so when it sees it.
+
+Paper mode also needs `ANTHROPIC_API_KEY`: Tier 2/3 and web search never
+fire in shadow, so nothing before paper exercises it.
 
 Full pipeline, real money tracked, no orders placed. This is where you
 find out whether the escalated markets are *good*, not just few.

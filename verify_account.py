@@ -189,6 +189,16 @@ async def main() -> int:
               f"engine takes the more conservative")
 
     print("\n" + "=" * 58)
+    if b_ok and p_ok and w_ok and (cash + max(notional, marks)) <= 10.0:
+        # Shapes are right, but the risk engine's start() halts at
+        # NLV <= hard_floor_usd ($10) on its FIRST refresh. An unfunded
+        # account returns {"balances": []} -- verified live -- and paper
+        # mode would write .halted and exit 2 before doing anything.
+        # That is the protection working, not a bug; it just means fund
+        # the account before setting SWARM_MODE=paper.
+        print("  shapes OK, but NLV is at or under the $10 hard floor.")
+        print("  paper mode would halt on startup. Fund the account first.")
+        return 2
     if b_ok and p_ok and w_ok:
         print("  all checks passed -- the risk engine can trust this account")
         return 0
