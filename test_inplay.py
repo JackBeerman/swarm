@@ -140,3 +140,50 @@ def test_calibration_log_records_fair_value_beside_the_book(tmp_path):
     assert r["gate_score"] == 0.90
     assert r["model"] == inplay.FV_MODEL
     assert r["resolved_outcome"] is None, "filled by a backfill, never here"
+
+
+def test_score_fv_compares_model_to_book(tmp_path, capsys):
+    """
+    The question the log exists to answer: was the model ever right when
+    the book was wrong? Three resolved rows: model right / book wrong,
+    both right, both wrong.
+    """
+    path = str(tmp_path / "fv.db")
+    conn = inplay.connect_db(path)
+    rows = [
+        # (fv, bid, ask, outcome)
+        (0.70, 0.40, 0.42, "1"),   # model right, book wrong
+        (0.80, 0.78, 0.80, "1"),   # both right
+        (0.30, 0.28, 0.30, "1"),   # both wrong
+    ]
+    for fv, b, a, y in rows:
+        conn.execute(
+            """INSERT INTO fair_values (at, game, market_slug, line, fv, bid,
+                   ask, model, resolved_outcome) VALUES (?,?,?,?,?,?,?,?,?)""",
+            ("t", "g", "m", 40.5, fv, b, a, inplay.FV_MODEL, y))
+    conn.commit(); conn.close()
+
+    inplay.score_fv(path)
+    out = capsys.readouterr().out
+    assert "3 resolved fair-value rows" in out
+    assert "model right / book wrong : 1" in out
+    assert "book right / model wrong : 0" in out
+    assert "model better" in out
+
+
+def test_watchlist_always_includes_game_totals():
+    """
+    On three of four live games the 40-nearest-0.50 watchlist held no
+    game-total market at all, and the fair-value model scored nothing.
+    Totals nearest 0.50 get reserved slots.
+    """
+    props = [({"slug": f"astatc-nfl-x-prop-{i}", "outcomePrices": '["0.5000","0.5000"]'},
+              {"slug": "ev"}) for i in range(60)]
+    totals = [({"slug": f"tsc-nfl-x-total-{ln}", "outcomePrices": '["0.4700","0.5300"]'},
+               {"slug": "ev"}) for ln in ("39pt5", "40pt5", "41pt5")]
+    chosen = inplay.select_watchlist(props + totals, max_markets=40)
+    slugs = [m["slug"] for m, _ in chosen]
+    assert len(slugs) == 40
+    assert slugs[:3] == ["tsc-nfl-x-total-39pt5", "tsc-nfl-x-total-40pt5",
+                         "tsc-nfl-x-total-41pt5"]
+    assert len(set(slugs)) == 40, "no duplicates"

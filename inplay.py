@@ -391,6 +391,34 @@ def record_fv(conn: sqlite3.Connection, game: str, slug: str, line: float,
     conn.commit()
 
 
+#: Game-total markets always get these many slots on the watchlist. They
+#: are the only market type the fair-value model scores, and on three of
+#: four live games the 40-nearest-0.50 set contained none of them.
+TOTAL_SLOTS = 4
+
+
+def select_watchlist(
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+    max_markets: int,
+    total_slots: int = TOTAL_SLOTS,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """
+    The game totals nearest 0.50 first, then everything else nearest 0.50.
+    Pure, so it is testable without a socket.
+    """
+    ordered = main_lines_first(pairs)
+    totals = [pe for pe in ordered if total_line_from_slug(pe[0].get("slug") or "")]
+    picked = totals[:total_slots]
+    seen = {pe[0].get("slug") for pe in picked}
+    for pe in ordered:
+        if len(picked) >= max_markets:
+            break
+        if pe[0].get("slug") not in seen:
+            picked.append(pe)
+            seen.add(pe[0].get("slug"))
+    return picked[:max_markets]
+
+
 async def markets_for_game(pm: Any, game_slug: str, max_markets: int) -> list[str]:
     """
     The game's open markets, via the events endpoint the rest of the
@@ -419,13 +447,114 @@ async def markets_for_game(pm: Any, game_slug: str, max_markets: int) -> list[st
         raise SystemExit("game is finished; nothing to watch")
     if gs == "not_started":
         log.warning("game has not started; feed will be quiet until kickoff")
-    # Main lines and contested props first. The first live feed took the
-    # head of the list and got thirty 0.985 alt-lines that never ticked.
-    ordered = main_lines_first(pairs)
-    log.info("prescreen kept %d of %d; subscribing the %d nearest 0.50",
-             len(ordered), len(pairs), min(max_markets, len(ordered)))
-    chosen = ordered[:max_markets]
+    # Totals first, then main lines and contested props nearest 0.50. The
+    # first live feed took the head of the list and got thirty 0.985
+    # alt-lines that never ticked; the next one got forty markets nearest
+    # 0.50 and, on three of four games, not one game total among them.
+    chosen = select_watchlist(pairs, max_markets)
+    n_tot = sum(1 for m, _ in chosen if total_line_from_slug(m.get("slug") or ""))
+    log.info("prescreen kept %d of %d; subscribing %d (%d game totals)",
+             len(main_lines_first(pairs)), len(pairs), len(chosen), n_tot)
     return [m["slug"] for m, _ in chosen], chosen
+
+
+async def backfill_fv(pause: float = 2.0, limit: int = 500) -> None:
+    """
+    Fill resolved_outcome on fair_values once markets settle. Mirrors
+    shadow.backfill: NotFoundError is "not yet" and final for the pass;
+    RateLimitError is Cloudflare and retried with backoff; a non-binary
+    settlement (a push) is skipped rather than mislabelled.
+    """
+    conn = connect_db()
+    slugs = [r["market_slug"] for r in conn.execute(
+        """SELECT DISTINCT market_slug FROM fair_values
+           WHERE resolved_outcome IS NULL ORDER BY id DESC LIMIT ?""", (limit,))]
+    log.info("%d in-play markets awaiting resolution", len(slugs))
+    filled = pending = failed = 0
+    async with AsyncPolymarketUS() as pm:
+        for slug in slugs:
+            res, terminal, delay = None, False, pause
+            for attempt in range(4):
+                try:
+                    res = await pm.markets.settlement(slug)
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    if type(exc).__name__ == "NotFoundError":
+                        terminal = True
+                        break
+                    if attempt == 3:
+                        failed += 1
+                        break
+                    await asyncio.sleep(delay)
+                    delay *= 2
+            if terminal or res is None:
+                pending += 1
+                await asyncio.sleep(pause)
+                continue
+            try:
+                sval = float(res.get("settlement"))
+            except (TypeError, ValueError):
+                sval = None
+            if sval not in (0.0, 1.0):
+                pending += 1
+                log.warning("non-binary settlement %r for %s; skipped",
+                            res.get("settlement"), slug)
+            else:
+                conn.execute(
+                    """UPDATE fair_values SET resolved_outcome = ?
+                       WHERE market_slug = ? AND resolved_outcome IS NULL""",
+                    (str(int(sval)), slug))
+                conn.commit()
+                filled += 1
+            await asyncio.sleep(pause)
+    conn.close()
+    log.info("backfill: %d resolved, %d still open, %d errors",
+             filled, pending, failed)
+
+
+def score_fv(db: str = INPLAY_DB) -> None:
+    """
+    Was the model ever right when the book was wrong?
+
+    Two Brier scores side by side -- model fair value vs outcome, and the
+    book's own mid vs outcome -- over the same resolved rows. If the model
+    does not beat the book, it has no edge, whatever it reports live. The
+    third number is the one that would justify a trade: rows where the
+    model sat on the correct side of 0.50 and the book did not.
+    """
+    import statistics
+    with connect_db(db) as conn:
+        rows = conn.execute(
+            """SELECT fv, bid, ask, resolved_outcome, seconds_left
+               FROM fair_values
+               WHERE resolved_outcome IS NOT NULL
+                 AND bid IS NOT NULL AND ask IS NOT NULL"""
+        ).fetchall()
+    print("=" * 62)
+    print(f"  {len(rows)} resolved fair-value rows")
+    print("=" * 62)
+    if not rows:
+        print("\n  nothing resolved yet. Run --backfill after markets settle.")
+        return
+    bm, bb, model_right_book_wrong, book_right_model_wrong = [], [], 0, 0
+    for r in rows:
+        y = float(r["resolved_outcome"])
+        mid = (r["bid"] + r["ask"]) / 2.0
+        bm.append((r["fv"] - y) ** 2)
+        bb.append((mid - y) ** 2)
+        m_side, b_side = r["fv"] >= 0.5, mid >= 0.5
+        truth = y >= 0.5
+        if m_side == truth and b_side != truth:
+            model_right_book_wrong += 1
+        if b_side == truth and m_side != truth:
+            book_right_model_wrong += 1
+    print(f"\n  brier  model {statistics.mean(bm):.4f}   book {statistics.mean(bb):.4f}"
+          f"   ({'model better' if statistics.mean(bm) < statistics.mean(bb) else 'book better'})")
+    print(f"  model right / book wrong : {model_right_book_wrong}")
+    print(f"  book right / model wrong : {book_right_model_wrong}")
+    print("\n  rows are per poll, not per market -- the same market appears at\n"
+          "  many clocks. That is intended: it scores the model at every\n"
+          "  point it would have been asked to act.")
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -542,11 +671,21 @@ def main() -> int:
     ap.add_argument("--poll", type=float, default=15.0,
                     help="seconds between game-state polls (REST elapsed was "
                          "seen to move at ~20s)")
+    ap.add_argument("--backfill", action="store_true",
+                    help="fill resolved_outcome on fair_values from settlement")
+    ap.add_argument("--score-fv", action="store_true",
+                    help="model vs book Brier over resolved fair-value rows")
     args = ap.parse_args()
-    if not args.game and not args.markets:
-        ap.error("--game or --markets is required")
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)-7s %(message)s")
+    if args.backfill:
+        asyncio.run(backfill_fv())
+        return 0
+    if args.score_fv:
+        score_fv()
+        return 0
+    if not args.game and not args.markets:
+        ap.error("--game or --markets is required")
     return asyncio.run(run(args))
 
 
