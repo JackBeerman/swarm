@@ -36,6 +36,7 @@ from polymarket_us import AsyncPolymarketUS
 from adapters import (
     PriceTracker,
     QuoteFetcher,
+    DEFAULT_TAG_MIX,
     fetch_events_across_tags,
     interleave_by_event,
     iter_event_markets,
@@ -201,6 +202,7 @@ async def collect(
     concurrency: int = 2,
     events: int = 50,
     cooldown_hours: float = 20.0,
+    tags: "tuple[str, ...] | None" = None,
 ) -> None:
     """
     One sweep. Triage only. No orders, no Tier 2/3.
@@ -234,7 +236,10 @@ async def collect(
         # which is ~half sports. Every market in the first calibration
         # sweep came back `contested_event`, which makes a threshold
         # sweep a cliff rather than a curve.
-        evs = await fetch_events_across_tags(pm, per_tag=max(1, events // 7))
+        tag_mix = tags or DEFAULT_TAG_MIX
+        evs = await fetch_events_across_tags(
+            pm, tags=tag_mix, per_tag=max(1, events // len(tag_mix))
+        )
         pairs = iter_event_markets({"events": evs})
         total = len(pairs)
         # Interleave before truncating. Events flatten into long runs of
@@ -278,6 +283,158 @@ async def collect(
     conn.commit()
     conn.close()
     log.info("triaged %d markets (%d skipped)", seen, skipped)
+
+
+# --------------------------------------------------------------------------
+# resolution backfill
+# --------------------------------------------------------------------------
+
+async def backfill(limit: int = 500, pause: float = 2.0) -> None:
+    """
+    Fill `resolved_outcome` for markets that have since settled.
+
+    This is the step that turns collected verdicts into an answer. Without
+    it you can measure how OFTEN the gate escalates but never whether it
+    escalated the right markets -- a gate you never scored against
+    outcomes is just a rate limiter.
+
+    `markets.settlement(slug)` returns {"settlement": 1|0} once a market
+    resolves and 404s while it is still open, so a NotFoundError here
+    means "not yet", not "broken".
+    """
+    conn = connect()
+    rows = conn.execute(
+        """SELECT DISTINCT market_slug FROM verdicts
+           WHERE resolved_outcome IS NULL
+           ORDER BY seen_at DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    slugs = [r["market_slug"] for r in rows]
+    log.info("%d markets awaiting resolution", len(slugs))
+
+    filled = pending = failed = 0
+    async with AsyncPolymarketUS() as pm:
+        for slug in slugs:
+            res = None
+            terminal = False
+            delay = pause
+            # Two different failures wearing the same shape. NotFoundError
+            # is the API answering "not settled yet" and is final for this
+            # pass. RateLimitError is Cloudflare returning an HTML block
+            # page -- retryable, and it arrived at 1.5s spacing, so the
+            # settlement endpoint is tighter than the quote endpoint.
+            for attempt in range(4):
+                try:
+                    res = await pm.markets.settlement(slug)
+                    break
+                except Exception as exc:
+                    name = type(exc).__name__
+                    if name == "NotFoundError":
+                        terminal = True
+                        break
+                    if attempt == 3:
+                        failed += 1
+                        log.debug("settlement failed for %s: %s",
+                                  slug, str(exc)[:80])
+                        break
+                    await asyncio.sleep(delay)
+                    delay *= 2
+            if terminal:
+                pending += 1
+                await asyncio.sleep(pause)
+                continue
+            if res is None:
+                await asyncio.sleep(pause)
+                continue
+
+            settlement = res.get("settlement")
+            if settlement is None:
+                pending += 1
+            else:
+                conn.execute(
+                    """UPDATE verdicts
+                       SET resolved_outcome = ?, resolved_at = ?
+                       WHERE market_slug = ? AND resolved_outcome IS NULL""",
+                    (str(int(settlement)),
+                     datetime.now(timezone.utc).isoformat(), slug),
+                )
+                conn.commit()
+                filled += 1
+                log.info("resolved %-46s -> %s", slug[:46], settlement)
+            await asyncio.sleep(pause)
+
+    conn.close()
+    log.info("backfill: %d resolved, %d still open, %d errors",
+             filled, pending, failed)
+
+
+def score(db: str = DB_PATH) -> None:
+    """
+    Was the gate escalating the RIGHT markets?
+
+    Tier 1 produces no probability of its own, so the thing to score is
+    the market: for each resolved verdict, how far was the mid-price from
+    what actually happened. Brier = (mid - outcome)^2.
+
+    A gate that is working escalates markets whose price was MORE wrong
+    than average -- that is where edge lives. If escalated markets score
+    the same as rejected ones, the gate is selecting on something that
+    does not predict mispricing, and no threshold sweep will fix that.
+    """
+    with closing(connect(db)) as conn:
+        rows = conn.execute(
+            """SELECT escalate, bid, ask, gate_score, is_sports,
+                      resolved_outcome, veto_reason
+               FROM verdicts
+               WHERE resolved_outcome IS NOT NULL
+                 AND bid IS NOT NULL AND ask IS NOT NULL"""
+        ).fetchall()
+
+    print("=" * 62)
+    print(f"  {len(rows)} resolved markets with a quote at triage time")
+    print("=" * 62)
+    if not rows:
+        print("\n  nothing resolved yet. Run --backfill after markets settle;")
+        print("  until then the gate is unscored and every threshold in")
+        print("  questions.py is still a guess.")
+        return
+
+    def brier(rs):
+        vals = []
+        for r in rs:
+            mid = (float(r["bid"]) + float(r["ask"])) / 2.0
+            vals.append((mid - float(r["resolved_outcome"])) ** 2)
+        return vals
+
+    esc = [r for r in rows if r["escalate"]]
+    rej = [r for r in rows if not r["escalate"]]
+
+    print(f"\n  {'bucket':<16} {'n':>5} {'market brier':>13} {'base rate':>11}")
+    for name, rs in (("escalated", esc), ("rejected", rej), ("all", rows)):
+        if not rs:
+            print(f"  {name:<16} {0:>5}")
+            continue
+        b = brier(rs)
+        base = sum(float(r["resolved_outcome"]) for r in rs) / len(rs)
+        print(f"  {name:<16} {len(rs):>5} {statistics.mean(b):>13.4f} "
+              f"{base:>11.2f}")
+
+    if esc and rej:
+        be, br = statistics.mean(brier(esc)), statistics.mean(brier(rej))
+        print()
+        if be > br:
+            print(f"  escalated markets were MORE mispriced "
+                  f"({be:.4f} vs {br:.4f}) -- the gate is selecting for "
+                  f"the thing you want.")
+        else:
+            print(f"  escalated markets were no more mispriced "
+                  f"({be:.4f} vs {br:.4f}). The gate is not finding "
+                  f"mispricing; sweeping min_gate_score will not fix that.")
+
+    sports = [r for r in rows if r["is_sports"]]
+    if sports:
+        print(f"\n  sports subset: {len(sports)} resolved, "
+              f"market brier {statistics.mean(brier(sports)):.4f}")
 
 
 # --------------------------------------------------------------------------
@@ -431,6 +588,12 @@ def main() -> None:
     ap.add_argument("--collect", action="store_true")
     ap.add_argument("--analyze", action="store_true")
     ap.add_argument("--sweep", metavar="FIELD")
+    ap.add_argument("--backfill", action="store_true",
+                    help="fill resolved_outcome for settled markets")
+    ap.add_argument("--score", action="store_true",
+                    help="was the gate escalating the RIGHT markets?")
+    ap.add_argument("--tags", default=None,
+                    help="comma-separated tag slugs to sample (e.g. sports)")
     ap.add_argument("--min-volume", type=float,
                     default=StructuralLimits().min_volume_usd,
                     help="override the structural volume floor")
@@ -448,6 +611,12 @@ def main() -> None:
         level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s"
     )
 
+    if args.backfill:
+        asyncio.run(backfill())
+        return 0
+    if args.score:
+        score()
+        return 0
     if args.collect:
         asyncio.run(collect(
             min_volume=args.min_volume,
@@ -455,6 +624,7 @@ def main() -> None:
             concurrency=args.concurrency,
             events=args.events,
             cooldown_hours=args.cooldown_hours,
+            tags=tuple(t.strip() for t in args.tags.split(",")) if args.tags else None,
         ))
     if args.analyze:
         with closing(connect()) as conn:
