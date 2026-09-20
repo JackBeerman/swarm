@@ -18,10 +18,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import time
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from polymarket_us import AsyncPolymarketUS
@@ -33,6 +35,7 @@ from adapters import (
     fetch_events_across_tags,
     interleave_by_event,
     iter_event_markets,
+    normalize_bbo,
     normalize_market,
 )
 from config import Config, ConfigError, setup_logging
@@ -309,6 +312,96 @@ class Daemon:
             portfolio.release(o.market_slug)
 
 
+#: A test order must be tiny by construction, not by discipline.
+TEST_ORDER_MAX_QTY = 5
+TEST_ORDER_MAX_NOTIONAL = 5.00
+
+
+async def place_test_order(cfg: Config, slug: str, side: str, qty: int) -> int:
+    """
+    One deliberately tiny live order, so the operator can watch the real
+    order path post to the real account before the pipeline ever sizes
+    one. Same params shape, same preview -> create sequence, same tif as
+    _place(); nothing here is a second order path.
+
+    Requires mode=live (Config.validate() enforces the I_UNDERSTAND gate
+    and a pinned Jev model) and refuses while the halt sentinel exists.
+    Prices at the CURRENT ask/bid from a fresh quote, IOC, so the result
+    is a filled position rather than a resting order -- the truest test.
+    Caps: TEST_ORDER_MAX_QTY shares, TEST_ORDER_MAX_NOTIONAL dollars.
+    """
+    if not cfg.is_live:
+        log.error("test order requires SWARM_MODE=live on the command line")
+        return EXIT_CONFIG
+    if Path(os.getenv("HALT_SENTINEL", ".halted")).exists():
+        log.critical("halt sentinel present; refusing to place anything")
+        return EXIT_KILLSWITCH
+    side = side.upper()
+    if side not in ("YES", "NO"):
+        log.error("side must be YES or NO")
+        return EXIT_CONFIG
+    if not (1 <= qty <= TEST_ORDER_MAX_QTY):
+        log.error("qty must be 1..%d for a test order", TEST_ORDER_MAX_QTY)
+        return EXIT_CONFIG
+
+    async with AsyncPolymarketUS(
+        key_id=cfg.polymarket_key_id, secret_key=cfg.polymarket_secret_key
+    ) as pm:
+        bbo = normalize_bbo(await pm.markets.bbo(slug))
+        bid, ask = bbo.get("bid"), bbo.get("ask")
+        if bid is None or ask is None:
+            log.error("no two-sided quote on %s; not placing", slug)
+            return EXIT_CONFIG
+        # Marketable limit: YES lifts the ask, NO hits the bid (a NO share
+        # costs 1 - bid). Same intent mapping as _place().
+        if side == "YES":
+            intent, limit_price, cost_per_share = "ORDER_INTENT_BUY_LONG", ask, ask
+        else:
+            intent, limit_price, cost_per_share = "ORDER_INTENT_BUY_SHORT", bid, 1.0 - bid
+        notional = cost_per_share * qty
+        if not (0.05 < limit_price < 0.95):
+            log.error("price %.3f outside the sane band; not placing", limit_price)
+            return EXIT_CONFIG
+        if notional > TEST_ORDER_MAX_NOTIONAL:
+            log.error("notional $%.2f exceeds the $%.2f test cap; not placing",
+                      notional, TEST_ORDER_MAX_NOTIONAL)
+            return EXIT_CONFIG
+
+        params = {
+            "marketSlug": slug,
+            "intent": intent,
+            "type": "ORDER_TYPE_LIMIT",
+            "price": {"value": f"{limit_price:.3f}", "currency": "USD"},
+            "quantity": int(qty),
+            "tif": "TIME_IN_FORCE_IMMEDIATE_OR_CANCEL",
+            "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_MANUAL",
+        }
+        log.info("TEST ORDER: %s %s x%d @ %.3f  (~$%.2f)  book bid=%.3f ask=%.3f",
+                 slug, side, qty, limit_price, notional, bid, ask)
+        try:
+            await pm.orders.preview({"request": params})
+        except Exception as exc:
+            log.error("preview rejected: %s", exc)
+            return EXIT_CONFIG
+        try:
+            res = await pm.orders.create(params)
+        except Exception as exc:
+            log.error("order failed: %s", exc)
+            return EXIT_CONFIG
+        log.info("LIVE order id=%s executions=%s",
+                 res.get("id"), len(res.get("executions") or []))
+
+        pos = await pm.portfolio.positions()
+        p = (pos.get("positions") or {}).get(slug)
+        if p:
+            log.info("position now: net=%s cashValue=%s",
+                     p.get("netPosition"), p.get("cashValue"))
+        else:
+            log.warning("no position visible yet for %s (IOC may not have "
+                        "filled, or the book moved); check open orders", slug)
+    return EXIT_OK
+
+
 class _ShadowBudget:
     """Never spends, never sizes. Shadow mode touches no account."""
 
@@ -346,6 +439,14 @@ def main() -> int:
     ap.add_argument("--min-hours", type=float, default=None,
                     help="research window on the EVENT clock for this run; "
                          "default keeps questions.py (6h)")
+    ap.add_argument("--test-order", metavar="SLUG", default=None,
+                    help="place ONE tiny live order on this market and exit. "
+                         "Requires SWARM_MODE=live and the I_UNDERSTAND gate "
+                         "on the command line; capped at "
+                         f"{TEST_ORDER_MAX_QTY} shares / "
+                         f"${TEST_ORDER_MAX_NOTIONAL:.0f}")
+    ap.add_argument("--test-side", default="YES", help="YES or NO")
+    ap.add_argument("--test-qty", type=int, default=1)
     args = ap.parse_args()
 
     try:
@@ -357,6 +458,13 @@ def main() -> int:
 
     setup_logging(cfg.log_level)
     log.info("starting\n%s", cfg.describe())
+
+    if args.test_order:
+        # One tiny order through the real path, then exit. Never enters
+        # the cycle loop; never runs the pipeline.
+        return asyncio.run(
+            place_test_order(cfg, args.test_order, args.test_side, args.test_qty)
+        )
 
     daemon = Daemon(
         cfg,
