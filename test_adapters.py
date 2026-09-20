@@ -474,3 +474,50 @@ def test_season_futures_carry_no_period():
     assert m["period"] is None
     from adapters import game_state
     assert game_state(m) == "unknown"
+
+
+# --------------------------------------------------------------------------
+# Market selection for a game: prescreen extremes, main lines first
+# --------------------------------------------------------------------------
+
+def _m(slug, prices):
+    return ({"slug": slug, "outcomePrices": prices}, {"slug": "ev"})
+
+
+def test_price_band_reject_only_when_both_prices_are_extreme():
+    from adapters import price_band_reject
+    assert price_band_reject({"outcomePrices": '["0.9850","0.9900"]'}) is True
+    assert price_band_reject({"outcomePrices": '["0.0200","0.0300"]'}) is True
+    assert price_band_reject({"outcomePrices": '["0.4800","0.5000"]'}) is False
+    assert price_band_reject({"outcomePrices": '["0.0300","0.0600"]'}) is False
+    assert price_band_reject({"outcomePrices": "garbage"}) is False
+    assert price_band_reject({}) is False
+
+
+def test_listed_mid_parses_the_json_string():
+    from adapters import listed_mid
+    assert listed_mid({"outcomePrices": '["0.4800","0.5200"]'}) == pytest.approx(0.50)
+    assert listed_mid({"outcomePrices": "nope"}) is None
+    assert listed_mid({}) is None
+
+
+def test_main_lines_first_orders_by_closeness_to_half():
+    """
+    The first in-play feed took the head of a game's ~800-market list and
+    got thirty 0.985 alt-lines that never ticked. Extremes must go, and
+    the contested prices must come first.
+    """
+    from adapters import main_lines_first
+    pairs = [
+        _m("cover-17.5", '["0.9850","0.9900"]'),   # extreme -> dropped
+        _m("total-39.5", '["0.5000","0.5100"]'),   # main line -> first
+        _m("winner-1q",  '["0.4900","0.5000"]'),
+        _m("sacks-3.5",  '["0.4200","0.5500"]'),
+        _m("tt-21.5",    '["0.9300","0.9400"]'),   # kept, but last
+        _m("unknown",    "garbage"),               # kept, near the back
+    ]
+    out = [m["slug"] for m, _ in main_lines_first(pairs)]
+    assert "cover-17.5" not in out
+    assert out[0] in ("total-39.5", "winner-1q")
+    assert out.index("tt-21.5") > out.index("sacks-3.5")
+    assert len(out) == 5

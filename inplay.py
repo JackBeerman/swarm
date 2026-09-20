@@ -51,6 +51,8 @@ from adapters import (  # noqa: E402
     normalize_bbo,
     normalize_market,
 )
+from questions import GateThresholds, StructuralLimits  # noqa: E402
+from swarm import JevTriage  # noqa: E402
 
 log = logging.getLogger("inplay")
 
@@ -60,21 +62,39 @@ def _mid(bbo: dict[str, Any]) -> float | None:
     return None if b is None or a is None else round((b + a) / 2.0, 4)
 
 
+#: A tick is only a price if the book is real. At kickoff the feed showed
+#: "hsq-2q" with bid 0.01 / ask 0.97 -- a mid of 0.49 that means nothing.
+#: Same ceiling the pre-game filter and the sizer use.
+MAX_TICK_SPREAD = 0.04
+
+#: A "slip": the mid moving at least this much within this many seconds
+#: on a market Jev classified as tractable. Logged, not traded.
+SLIP_MOVE = 0.05
+SLIP_WINDOW_S = 30.0
+
+
 class LiveFeed:
     """
     Subscribes a set of market slugs and keeps PriceTracker current.
 
-    Frames arrive on the websocket's own task; `on_frame` is synchronous
+    Frames arrive on the websocket's own task; `_on_lite` is synchronous
     and does no I/O, which is the only safe thing to do inside an event
-    emitter. Everything slower reads `self.tracker` / `self.last` later.
+    emitter. Jev is asked ONCE per market, from `classify()`, on the main
+    task -- market structure does not change mid-game, so there is no
+    reason to pay for it per tick. Everything per tick is arithmetic.
     """
 
-    def __init__(self, key_id: str, secret_key: str) -> None:
+    def __init__(self, key_id: str, secret_key: str,
+                 max_spread: float = MAX_TICK_SPREAD) -> None:
         self._ws = MarketsWebSocket(key_id=key_id, secret_key=secret_key)
         self.tracker = PriceTracker(window_seconds=4 * 3600, max_points=2000)
         self.last: dict[str, dict[str, Any]] = {}
+        self.verdicts: dict[str, Any] = {}      # slug -> TriageVerdict, once
+        self.max_spread = max_spread
         self.frames = 0
         self.changes = 0
+        self.wide = 0
+        self.slips = 0
         self.errors = 0
         self._ws.on("market_data_lite", self._on_lite)
         self._ws.on("error", self._on_error)
@@ -93,13 +113,60 @@ class LiveFeed:
         self.frames += 1
         prev = self.last.get(slug)
         self.last[slug] = bbo
+        b, a = bbo.get("bid"), bbo.get("ask")
+        if b is None or a is None or (a - b) > self.max_spread:
+            # Record nothing to the tracker: a delta computed against a
+            # 0.96-wide book is noise, and PriceTracker would report it
+            # as a move.
+            self.wide += 1
+            return
         self.tracker.observe_bbo(slug, {"marketData": payload})
         new_mid, old_mid = _mid(bbo), (_mid(prev) if prev else None)
         if old_mid is None or new_mid != old_mid:
             self.changes += 1
-            log.info("%-46s %s -> %s  bid=%s ask=%s  last=%s",
-                     slug[:46], old_mid, new_mid, bbo.get("bid"),
-                     bbo.get("ask"), bbo.get("last"))
+            v = self.verdicts.get(slug)
+            tag = ("" if v is None else
+                   f"  [{'GATE' if v.escalate else 'no'} {v.gate_score:.2f} "
+                   f"{v.sports_market_type}]")
+            log.info("%-46s %s -> %s  bid=%s ask=%s%s",
+                     slug[:46], old_mid, new_mid, b, a, tag)
+            # Slip detection: a real move, fast, on a market the gate
+            # would have escalated pre-game. Arithmetic on the tracker.
+            if v is not None and v.escalate:
+                d = self.tracker.change(slug, SLIP_WINDOW_S)
+                if d is not None and abs(d) >= SLIP_MOVE:
+                    self.slips += 1
+                    log.warning("SLIP %-42s %+.3f in %.0fs  now %.3f/%.3f",
+                                slug[:42], d, SLIP_WINDOW_S, b, a)
+
+    async def classify(self, jev: JevTriage, pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+                       limits: StructuralLimits) -> None:
+        """
+        Jev once per market. Uses the quote the feed already has (the
+        subscribe snapshot), so this costs one Tier 1 call per market
+        (~$0.00007) and no extra REST. Structural rejects are recorded
+        too, so a wide book at classification time is visible later.
+        """
+        gate = GateThresholds()
+        for m, ev in pairs:
+            slug = m.get("slug")
+            if not slug or slug in self.verdicts:
+                continue
+            bbo = self.last.get(slug)
+            if not bbo:
+                continue
+            nm = normalize_market(m, ev)
+            try:
+                v = await jev.evaluate(nm, bbo, gate, self.tracker, limits)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("classify failed %s: %s", slug, str(exc)[:100])
+                continue
+            self.verdicts[slug] = v
+        n_gate = sum(1 for v in self.verdicts.values() if v.escalate)
+        n_struct = sum(1 for v in self.verdicts.values() if v.structural_reject)
+        log.info("classified %d markets once: %d pass the gate, %d structural, "
+                 "%d vetoed", len(self.verdicts), n_gate, n_struct,
+                 len(self.verdicts) - n_gate - n_struct)
 
     async def start(self, slugs: list[str]) -> None:
         await self._ws.connect()
@@ -114,7 +181,9 @@ class LiveFeed:
 
     def report(self) -> str:
         return (f"feed: {self.frames} frames, {self.changes} mid changes, "
-                f"{self.errors} errors, {len(self.last)} markets quoted")
+                f"{self.wide} wide-book ticks ignored, {self.slips} slips, "
+                f"{self.errors} errors, {len(self.last)} markets quoted, "
+                f"{len(self.verdicts)} classified")
 
 
 async def markets_for_game(pm: Any, game_slug: str, max_markets: int) -> list[str]:
@@ -150,7 +219,8 @@ async def markets_for_game(pm: Any, game_slug: str, max_markets: int) -> list[st
     ordered = main_lines_first(pairs)
     log.info("prescreen kept %d of %d; subscribing the %d nearest 0.50",
              len(ordered), len(pairs), min(max_markets, len(ordered)))
-    return [m["slug"] for m, _ in ordered[:max_markets]]
+    chosen = ordered[:max_markets]
+    return [m["slug"] for m, _ in chosen], chosen
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -161,20 +231,36 @@ async def run(args: argparse.Namespace) -> int:
                   "POLYMARKET_SECRET_KEY (it returns 401 unauthenticated)")
         return 3
 
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     if args.markets:
         slugs = [s.strip() for s in args.markets.split(",") if s.strip()]
+        if not args.no_jev:
+            log.warning("--markets gives no event context; skipping Jev "
+                        "classification (use --game for that)")
     else:
         async with AsyncPolymarketUS() as pm:
-            slugs = await markets_for_game(pm, args.game, args.max_markets)
+            slugs, pairs = await markets_for_game(pm, args.game, args.max_markets)
 
     feed = LiveFeed(key_id, secret)
     await feed.start(slugs)
+    jev = None if (args.no_jev or not pairs) else JevTriage()
     t_end = time.time() + args.minutes * 60
     try:
+        if jev is not None:
+            # The subscribe snapshot lands within ~100ms; give it a moment
+            # so every market has a quote before it is classified.
+            await asyncio.sleep(2.0)
+            # allow_in_play: the pre-game filter rejects a live game by
+            # design. In-play classification is the point here. The
+            # research floor falls back to the settlement clock (event is
+            # in the past), which is weeks out and passes.
+            await feed.classify(jev, pairs, StructuralLimits(allow_in_play=True))
         while time.time() < t_end:
             await asyncio.sleep(5)
     finally:
         await feed.stop()
+        if jev is not None:
+            await jev.aclose()
         log.info("%s", feed.report())
         # what the tracker now knows: real deltas per market
         for slug in sorted(feed.last):
@@ -193,6 +279,8 @@ def main() -> int:
     ap.add_argument("--max-markets", type=int, default=40,
                     help="cap per game; a game carries ~800 markets")
     ap.add_argument("--minutes", type=float, default=10.0)
+    ap.add_argument("--no-jev", action="store_true",
+                    help="feed only; skip the once-per-market classification")
     args = ap.parse_args()
     if not args.game and not args.markets:
         ap.error("--game or --markets is required")
