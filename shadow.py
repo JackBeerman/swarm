@@ -280,6 +280,7 @@ async def collect(
     tags: "tuple[str, ...] | None" = None,
     min_hours_to_event: float | None = None,
     start_window_hours: float | None = None,
+    max_spread: float | None = None,
 ) -> None:
     """
     One sweep. Triage only. No orders, no Tier 2/3.
@@ -304,6 +305,13 @@ async def collect(
     limit_kwargs: dict[str, Any] = {"min_volume_usd": min_volume}
     if min_hours_to_event is not None:
         limit_kwargs["min_hours_to_close"] = min_hours_to_event
+    # The 0.04 default was calibrated on 176 markets across every tag.
+    # Pre-game NFL prop books are wider than that on a Saturday morning:
+    # the first sweep sent 97 markets to the filter and 95 came back,
+    # almost all spread > 0.04. Per-run override so a wider sweep can be
+    # collected without changing the default in questions.py.
+    if max_spread is not None:
+        limit_kwargs["max_spread"] = max_spread
     limits = StructuralLimits(**limit_kwargs)
     seen = skipped = 0
 
@@ -750,6 +758,10 @@ def main() -> None:
                     help="only events starting within this many hours "
                          "(startTimeMin/Max). The nfl tag page alone is "
                          "season futures; 48 selects the weekend's games")
+    ap.add_argument("--max-spread", type=float, default=None,
+                    help="structural spread ceiling for this run; default "
+                         "keeps questions.py (0.04, which rejected ~98%% "
+                         "of Saturday-morning NFL props)")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -772,6 +784,7 @@ def main() -> None:
             tags=tuple(t.strip() for t in args.tags.split(",")) if args.tags else None,
             min_hours_to_event=args.min_hours,
             start_window_hours=args.start_window,
+            max_spread=args.max_spread,
         ))
     if args.analyze:
         with closing(connect()) as conn:
