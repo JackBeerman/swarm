@@ -92,6 +92,29 @@ def test_total_fair_value_sanity():
     assert total_fair_value(44.5, _gs("OT", score="20-20", elapsed="9:00"), 44.0) is None
 
 
+def test_fair_value_agrees_with_the_book_at_kickoff():
+    """
+    At kickoff, the pre-game total IS the market's fair value: a line set
+    at 40.5 must price near 0.50. The Poisson version failed this live
+    (0.27 against a 0.50 book at Q2); a model the book would laugh at
+    cannot be allowed to report an "edge".
+    """
+    fv = total_fair_value(40.5, _gs("Q1", score="0-0", elapsed="15:00"), 40.5)
+    assert 0.45 < fv < 0.55, fv
+
+
+def test_fair_value_dispersion_is_realistic_not_poisson():
+    """
+    Live at Q2 890s, 7 points scored, line 40.5, anchor 40.5: the book
+    sat at 0.50/0.51. The model must land in the same neighbourhood, not
+    at 0.27. Mean 7 + 40.5*0.747 = 37.3, need 40.5, sd 13.5*sqrt(0.747)
+    = 11.7 -> z 0.27 -> p_over ~0.39. Within a dime of the book, with the
+    remaining gap being the book's own view of pace.
+    """
+    fv = total_fair_value(40.5, _gs("Q2", score="0-7", elapsed="14:50"), 40.5)
+    assert 0.33 < fv < 0.48, fv
+
+
 def test_fair_value_uses_break_period_clock():
     """During a break the model must still produce a number."""
     fv = total_fair_value(40.5, _gs("End Q1", score="0-7"), 40.5)

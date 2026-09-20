@@ -199,6 +199,12 @@ class LiveFeed:
 NFL_PERIODS = {"Q1": 0, "Q2": 1, "Q3": 2, "Q4": 3}
 NFL_PERIOD_S = 15 * 60
 
+#: Standard deviation of an NFL full-game total around its line, in
+#: points. Widely cited at ~13-14; 13.5 is the working value. This one
+#: number is what separates a fair value the book would laugh at from
+#: one it would argue with -- see total_fair_value().
+NFL_TOTAL_SD = 13.5
+
 
 def _parse_score(s: str | None) -> tuple[int, int] | None:
     """'21-17' -> (21, 17). Order is the exchange's (typically away-home)."""
@@ -290,20 +296,31 @@ def total_fair_value(line: float, gs: GameState, pregame_total: float | None) ->
     is a calculation, and calculations live in code (CLAUDE.md).
 
     Returns None when the game clock is unavailable.
+
+    Dispersion matters more than the mean here. The first version used a
+    Poisson on remaining points and, live at Q2 with 7 scored, put the
+    40.5 total at 0.271 while the book sat at 0.50/0.51. The book is the
+    sharp reference; a 24-point disagreement is the model's fault. NFL
+    scoring is bursty (a touchdown is 7 at once), so a full-game total
+    has SD ~13.5 -- roughly 2.5x what a Poisson at that mean allows --
+    and every Poisson fair value was too extreme whenever the chase was
+    off pace. Normal, SD scaled by sqrt(time left). Still crude; no
+    longer systematically confident.
     """
     import math
     if gs.points is None or gs.seconds_left is None:
         return None
     frac_left = gs.seconds_left / (4 * NFL_PERIOD_S)
     base = pregame_total if pregame_total else 44.0     # NFL-ish average
-    mu = max(base * frac_left, 0.05)
-    need = line - gs.points                              # points still needed
-    if need < 0:
+    if line - gs.points < 0:
         return 1.0                                        # already over
-    # P(X > need) for X ~ Poisson(mu); lines are x.5 so > is >= floor+1
-    k = int(math.floor(need))
-    cdf = sum(math.exp(-mu) * mu ** i / math.factorial(i) for i in range(k + 1))
-    return max(0.0, min(1.0, 1.0 - cdf))
+    if frac_left <= 0:
+        return 0.0                                        # over never came
+    mean = gs.points + base * frac_left
+    sd = max(NFL_TOTAL_SD * math.sqrt(frac_left), 0.5)
+    z = (line - mean) / sd
+    p_over = 0.5 * (1.0 - math.erf(z / math.sqrt(2.0)))
+    return max(0.0, min(1.0, p_over))
 
 
 def total_line_from_slug(slug: str) -> float | None:
