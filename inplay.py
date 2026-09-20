@@ -552,9 +552,23 @@ def score_fv(db: str = INPLAY_DB) -> None:
           f"   ({'model better' if statistics.mean(bm) < statistics.mean(bb) else 'book better'})")
     print(f"  model right / book wrong : {model_right_book_wrong}")
     print(f"  book right / model wrong : {book_right_model_wrong}")
+
+    # The headline flatters whoever guessed the direction: late-game rows
+    # are near-certain for both sides, and a biased model looks brilliant
+    # on the afternoons its bias points the right way. Score the hard rows
+    # separately -- first half, outcome genuinely open.
+    early = [r for r in rows if (r["seconds_left"] or 0) >= 1800]
+    if early:
+        em = statistics.mean((r["fv"] - float(r["resolved_outcome"])) ** 2 for r in early)
+        eb = statistics.mean(((r["bid"] + r["ask"]) / 2.0 - float(r["resolved_outcome"])) ** 2
+                             for r in early)
+        print(f"\n  first-half rows only ({len(early)}): "
+              f"model {em:.4f}   book {eb:.4f}   "
+              f"({'model better' if em < eb else 'book better'})")
     print("\n  rows are per poll, not per market -- the same market appears at\n"
           "  many clocks. That is intended: it scores the model at every\n"
-          "  point it would have been asked to act.")
+          "  point it would have been asked to act. But the effective sample\n"
+          "  is the number of MARKETS, and a handful of games is a coin flip.")
 
 
 async def run(args: argparse.Namespace) -> int:
