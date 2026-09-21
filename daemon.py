@@ -54,6 +54,65 @@ EXIT_KILLSWITCH = 2
 EXIT_CONFIG = 3
 
 
+def select_for_research(
+    candidates: "list[tuple[PipelineResult, dict[str, Any], dict[str, Any]]]",
+    max_research: int,
+    per_event: int = 1,
+) -> "list[tuple[PipelineResult, dict[str, Any], dict[str, Any]]]":
+    """
+    Which escalated markets get the paid tiers this cycle.
+
+    Triage is nearly free and research is ~1,500x dearer, so the cycle
+    triages everything first and then chooses, instead of researching
+    whatever escalated first. Measured on a nine-category sweep
+    (2026-09-21): 76% of non-sports markets that reached Jev escalated,
+    and one event put up six or seven legs at once -- six net-worth
+    thresholds, seven "top artist" legs. Legs of one event resolve
+    together and share one set of facts, so researching each is paying
+    several times for one bet.
+
+    Highest gate score first; at most `per_event` per event; at most
+    `max_research` in total. Ties go to the market that resolves sooner,
+    since capital parked for months is a cost on a small treasury.
+    """
+    def key(c):
+        result, market, _ = c
+        hours = _hours_until_event(market)
+        return (-result.triage.gate_score, hours if hours is not None else 1e9)
+
+    taken: dict[str, int] = {}
+    out = []
+    for c in sorted((c for c in candidates if c[0].triage and c[0].triage.escalate),
+                    key=key):
+        # Checked before appending: a budget of zero must research nothing.
+        if len(out) >= max_research:
+            break
+        event = str(c[1].get("event_slug") or c[1].get("slug"))
+        if taken.get(event, 0) >= per_event:
+            continue
+        taken[event] = taken.get(event, 0) + 1
+        out.append(c)
+    return out
+
+
+def _hours_until_event(market: "dict[str, Any]") -> "float | None":
+    """Hours until the outcome is known; settlement if the event time has passed."""
+    for field in ("event_at", "closes_at"):
+        raw = market.get(field)
+        if not raw:
+            continue
+        try:
+            t = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        hours = (t - datetime.now(timezone.utc)).total_seconds() / 3600.0
+        if hours > 0:
+            return hours
+    return None
+
+
 class Daemon:
     def __init__(self, cfg: Config, poll_seconds: float = 300.0,
                  once: bool = False,
@@ -64,8 +123,15 @@ class Daemon:
                  tags: "tuple[str, ...] | None" = None,
                  start_window_hours: float | None = None,
                  min_hours_to_event: float | None = None,
-                 min_edge: float | None = None):
+                 min_edge: float | None = None,
+                 research_per_cycle: int = 5,
+                 research_per_event: int = 1):
         self.cfg = cfg
+        # The research budget for one pass, in markets. See
+        # select_for_research(): everything is triaged, the best few are
+        # researched.
+        self.research_per_cycle = research_per_cycle
+        self.research_per_event = research_per_event
         # Mirrors shadow.py. Without these a paper cycle reads the default
         # listing page -- season futures and awards, none of the weekend's
         # games -- and the research floor (6h) rejects a same-morning
@@ -243,6 +309,7 @@ class Daemon:
         )
 
         quotes = QuoteFetcher(pm, concurrency=self.quote_concurrency)
+        candidates: list[tuple[PipelineResult, dict[str, Any], dict[str, Any]]] = []
 
         for market, event in fresh:
             if self._stop.is_set():
@@ -274,25 +341,37 @@ class Daemon:
                     )
                 continue
 
-            result = await swarm.evaluate(norm, bbo, self.tracker)
+            result = await swarm.triage(norm, bbo, self.tracker)
             self.stats["triaged"] += 1
             if result.triage and result.triage.escalate:
                 self.stats["escalated"] += 1
-                # Keep what the paid tiers believed. Before this, a cycle
-                # remembered only its cost -- facts, Tier 3's probability
-                # and the sized order were all discarded, so the research
-                # could never be scored against the outcome.
-                if self._traces is None:
-                    self._traces = traces.connect()
-                traces.record(self._traces, self.cfg.mode, result, norm, bbo)
-                sig = result.signal
-                log.info("EVAL %-40s gate=%.2f  tier3=%s  order=%s  cost=$%.3f%s",
-                         slug[:40], result.triage.gate_score,
-                         f"{sig.side.value}@{sig.probability:.2f}" if sig else "none",
-                         f"{result.order.quantity}@{result.order.limit_price:.3f}"
-                         if result.order else "none",
-                         result.total_cost_usd,
-                         f"  [{result.halted_at}]" if result.halted_at else "")
+                candidates.append((result, norm, bbo))
+
+        chosen = select_for_research(
+            candidates, self.research_per_cycle, self.research_per_event)
+        log.info("research: %d escalated, %d chosen (max %d, %d per event)",
+                 len(candidates), len(chosen),
+                 self.research_per_cycle, self.research_per_event)
+        for result, norm, bbo in chosen:
+            if self._stop.is_set():
+                return
+            slug = result.market_slug
+            result = await swarm.research(result, norm, bbo, self.tracker)
+            # Keep what the paid tiers believed. Before this, a cycle
+            # remembered only its cost -- facts, Tier 3's probability
+            # and the sized order were all discarded, so the research
+            # could never be scored against the outcome.
+            if self._traces is None:
+                self._traces = traces.connect()
+            traces.record(self._traces, self.cfg.mode, result, norm, bbo)
+            sig = result.signal
+            log.info("EVAL %-40s gate=%.2f  tier3=%s  order=%s  cost=$%.3f%s",
+                     slug[:40], result.triage.gate_score,
+                     f"{sig.side.value}@{sig.probability:.2f}" if sig else "none",
+                     f"{result.order.quantity}@{result.order.limit_price:.3f}"
+                     if result.order else "none",
+                     result.total_cost_usd,
+                     f"  [{result.halted_at}]" if result.halted_at else "")
             if result.order:
                 await self._place(pm, result, swarm.portfolio)
 
@@ -484,6 +563,12 @@ def main() -> int:
     ap.add_argument("--start-window", type=float, default=None,
                     help="only events starting within this many hours; "
                          "the nfl tag page alone is season futures")
+    ap.add_argument("--research-per-cycle", type=int, default=5,
+                    help="max markets sent to the paid tiers per pass, best "
+                         "gate score first (~$0.12 each)")
+    ap.add_argument("--research-per-event", type=int, default=1,
+                    help="max researched markets from one event; its legs "
+                         "resolve together and share the same facts")
     ap.add_argument("--min-hours", type=float, default=None,
                     help="research window on the EVENT clock for this run; "
                          "default keeps questions.py (6h)")
@@ -531,6 +616,8 @@ def main() -> int:
         start_window_hours=args.start_window,
         min_hours_to_event=args.min_hours,
         min_edge=args.min_edge,
+        research_per_cycle=args.research_per_cycle,
+        research_per_event=args.research_per_event,
     )
 
     async def runner() -> int:

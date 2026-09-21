@@ -916,6 +916,23 @@ class Swarm:
         bbo: dict[str, Any],
         tracker: Any | None = None,
     ) -> PipelineResult:
+        """Triage, then research if the gate clears. One market at a time."""
+        result = await self.triage(market, bbo, tracker)
+        if result.halted_at:
+            return result
+        return await self.research(result, market, bbo, tracker)
+
+    async def triage(
+        self,
+        market: dict[str, Any],
+        bbo: dict[str, Any],
+        tracker: Any | None = None,
+    ) -> PipelineResult:
+        """
+        Tier 1 only. Costs a fraction of a cent, so a cycle can triage
+        everything first and then choose what deserves research, instead
+        of spending on whichever market happened to come first.
+        """
         slug = str(market.get("slug"))
         result = PipelineResult(market_slug=slug)
 
@@ -946,6 +963,20 @@ class Swarm:
 
         if not verdict.escalate:
             result.halted_at = f"gate: {verdict.veto_reason}"
+        return result
+
+    async def research(
+        self,
+        result: PipelineResult,
+        market: dict[str, Any],
+        bbo: dict[str, Any],
+        tracker: Any | None = None,
+    ) -> PipelineResult:
+        """Tiers 2 and 3 and sizing, for a market triage() escalated."""
+        slug = result.market_slug
+        verdict = result.triage
+        if verdict is None or not verdict.escalate:
+            result.halted_at = result.halted_at or "not_escalated"
             return result
 
         # ---- Budget check before spending anything real -------------
