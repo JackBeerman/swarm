@@ -128,3 +128,14 @@ def test_fastlane_cannot_place_orders():
     import inspect
     src = inspect.getsource(fl)
     assert "orders.create" not in src and "import daemon" not in src
+
+
+def test_a_retitled_live_updates_item_counts_as_a_new_headline(tmp_path):
+    """Yahoo's live page keeps one URL and re-titles it as news breaks."""
+    conn = fl.connect(str(tmp_path / "f.db"))
+    rec = fl.Recorder(conn, jev=None, quotes=None, watch={}, th=FastLaneThresholds())
+    base = {"summary": "", "source": "yahoo", "published_at": None, "url": "https://y/live"}
+    assert rec._store_headline({**base, "title": "Live updates: pregame"}) is not None
+    assert rec._store_headline({**base, "title": "Live updates: pregame"}) is None
+    assert rec._store_headline({**base, "title": "Live updates: Nacua ruled out"}) is not None
+    conn.close()

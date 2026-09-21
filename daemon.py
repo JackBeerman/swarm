@@ -216,6 +216,16 @@ class Daemon:
                             else StructuralLimits()),
                 )
 
+                if self.cfg.mode != "shadow":
+                    # The per-event cap must survive a restart.
+                    if self._traces is None:
+                        self._traces = traces.connect()
+                    swarm.event_exposure.update(
+                        traces.open_event_exposure(self._traces, self.cfg.mode))
+                    if swarm.event_exposure:
+                        log.info("open event exposure: %s", {
+                            k: round(v, 2) for k, v in swarm.event_exposure.items()})
+
                 while not self._stop.is_set():
                     self.stats["loops"] += 1
                     try:

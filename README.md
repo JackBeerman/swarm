@@ -14,12 +14,22 @@ money spent on them at all.
 The treasury is $100. That is deliberate. At that size every wasted research
 call is visible, so the value of the cheap tier is measurable.
 
+There are two lanes, because a 300 ms judgment is useful in two different
+ways:
+
+| lane | Jev is used for | path to a decision | status |
+| --- | --- | --- | --- |
+| **Slow lane** ([daemon.py](daemon.py)) | **savings**: filter ~10,000 markets before any LLM spend | ~1 minute (LLM research) | shadow, paper; live gated |
+| **Fast lane** ([fastlane.py](fastlane.py)) | **speed**: read a headline against an LLM-written brief | ~300 ms, no LLM on the path | shadow only, records price drift |
+
+![Two lanes: Jev for savings and Jev for speed](docs/lanes.svg)
+
 **Status: infrastructure is well tested; edge is not demonstrated.** One real
 order has been placed and settled (2 shares, to prove the round trip).
 Everything else has run in shadow or paper mode. See
 [What we have measured](#what-we-have-measured) before drawing conclusions.
 
-## The shape
+## Slow lane: the shape
 
 ![Pipeline overview: a free structural filter, then Jev triage, then Claude research tiers, then sizing in code](docs/overview.svg)
 
@@ -27,7 +37,7 @@ The economic argument is the ratio between tiers. A full evaluation costs
 roughly 1,500x a Jev call. $100 buys about 1.2 million triage calls or about
 700 full evaluations, so the gate is where the budget is won or lost.
 
-## How Jev is used
+## How Jev is used in the slow lane
 
 All of it lives in [questions.py](questions.py). That file is the experiment;
 the rest is plumbing.
@@ -101,6 +111,43 @@ that is not `jev-N.N.N`, since a model update silently recalibrates every
 threshold. Answers are parsed strictly: a missing or malformed answer raises
 rather than defaulting to 0.0, because on a veto question 0.0 means "allowed".
 
+## Fast lane: Jev for speed
+
+The slow lane uses Jev to save money. A 300 ms judgment followed by a
+minute of LLM research is still a slow pipeline, so
+[fastlane.py](fastlane.py) inverts it:
+
+- **Ahead of time, slow:** an LLM with web search writes a *brief* per event
+  (who plays for which team).
+- **At the moment of news, fast:** a headline arrives from an RSS feed and
+  ONE Jev request answers, against the brief, whether it is a new fact,
+  whether it concerns the event, and for each watched market which way it
+  pushes YES and how much. Median 180-350 ms for 15 questions. No LLM on
+  the path.
+
+It places no orders. It records the quote at the moment of the headline and
+again at +1, +5 and +30 minutes, so the question is not "did the bet win"
+(days) but "did the price move the way Jev said" (minutes). It also records
+feed lag, because if RSS runs minutes behind the book no model speed helps.
+
+Why the brief matters, measured with
+[tools/probe_fastlane.py](tools/probe_fastlane.py): for the headline
+"inactives: Puka Nacua ruled out", which names no team, Jev without a brief
+said it *raises* the Rams' chance of covering. Nacua is a Ram. With the brief
+it stays out of that market and correctly lowers the Rams' team total. Jev
+reads what it is given; it does not know rosters.
+
+```bash
+python fastlane.py --tags nfl --start-window 6 --minutes 240   # watch one slate
+python fastlane.py --score                                     # drift after each signal
+python tools/probe_fastlane.py                                 # direction on labelled headlines
+```
+
+What decides whether this lane ever trades: feed lag (if RSS runs minutes
+behind the book, no model speed helps), signed drift after a signal beating
+the spread and the control, and dozens of acted headlines across several
+days. Until then it is a measurement, and it stays shadow-only.
+
 ## What we have learned about Jev
 
 Working notes, from running it rather than reading about it.
@@ -132,37 +179,6 @@ looked like "the model said no". [CLAUDE.md](CLAUDE.md) documents them.
 about the question asked. A Noul of 0.90 on `objective_resolution` is a claim
 about the market's wording, not about the bet.
 
-## The fast lane: Jev for speed, not only for savings
-
-The pipeline above uses Jev to save money. A 300 ms judgment followed by a
-minute of LLM research is still a slow pipeline, so
-[fastlane.py](fastlane.py) inverts it:
-
-- **Ahead of time, slow:** an LLM with web search writes a *brief* per event
-  (who plays for which team).
-- **At the moment of news, fast:** a headline arrives from an RSS feed and
-  ONE Jev request answers, against the brief, whether it is a new fact,
-  whether it concerns the event, and for each watched market which way it
-  pushes YES and how much. Median 180-350 ms for 15 questions. No LLM on
-  the path.
-
-It places no orders. It records the quote at the moment of the headline and
-again at +1, +5 and +30 minutes, so the question is not "did the bet win"
-(days) but "did the price move the way Jev said" (minutes). It also records
-feed lag, because if RSS runs minutes behind the book no model speed helps.
-
-Why the brief matters, measured with
-[tools/probe_fastlane.py](tools/probe_fastlane.py): for the headline
-"inactives: Puka Nacua ruled out", which names no team, Jev without a brief
-said it *raises* the Rams' chance of covering. Nacua is a Ram. With the brief
-it stays out of that market and correctly lowers the Rams' team total. Jev
-reads what it is given; it does not know rosters.
-
-```bash
-python fastlane.py --tags nfl --start-window 6 --minutes 240
-python fastlane.py --score
-```
-
 ## What we have measured
 
 Be careful with all of it.
@@ -185,20 +201,23 @@ markets where research beats the price is the open question.
 
 | file | what it is |
 | --- | --- |
-| [questions.py](questions.py) | **The experiment.** Every Jev question, threshold and structural limit. |
-| [swarm.py](swarm.py) | Jev client, gate, gatherers, synthesis, sizing. |
+| [questions.py](questions.py) | **The experiment.** Every Jev question, threshold and structural limit, for both lanes. |
+| **Slow lane** | |
+| [swarm.py](swarm.py) | Jev client, gate, gatherers, synthesis, sizing, per-event exposure cap. |
 | [adapters.py](adapters.py) | Normalizes `polymarket_us` wire shapes. Do not bypass. |
 | [schemas.py](schemas.py) | Pydantic contracts between tiers. |
 | [shadow.py](shadow.py) | Triage-only collector, settlement backfill, scoring, calibration. **Start here.** |
-| [daemon.py](daemon.py) | Entry point. The only place an order can be created. |
+| [daemon.py](daemon.py) | Entry point. Triages everything, researches the best few. The only place an order can be created. |
 | [risk_engine.py](risk_engine.py) | NLV, cost ledger, kill switch. |
 | [search.py](search.py) | Web search for Tier 2 (Anthropic server tool). |
-| [traces.py](traces.py) | What Tiers 2/3 believed, kept so it can be scored. |
-| [fastlane.py](fastlane.py) | **Shadow-only.** Jev reads headlines in ~200 ms against an LLM-written brief; prices are followed for 30 min. |
+| [traces.py](traces.py) | What Tiers 2/3 believed, with `--backfill` and `--score` against the price they saw. |
+| **Fast lane** | |
+| [fastlane.py](fastlane.py) | **Shadow-only.** Jev reads headlines in ~300 ms against an LLM-written brief; prices are followed for 30 min. |
+| **Shared** | |
 | [inplay.py](inplay.py) | Websocket feed and in-game experiments. |
 | [config.py](config.py) | Env loading, fail-fast validation. |
-| [tools/](tools/) | `probe_restricted.py`, `survey_tags.py`, `by_category.py`. |
-| [tests/](tests/) | 190 tests. No network, no keys; httpx is mocked at the transport layer. |
+| [tools/](tools/) | `probe_restricted.py`, `probe_fastlane.py`, `survey_tags.py`, `by_category.py`. |
+| [tests/](tests/) | 197 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
 | [docs/PROPOSALS.md](docs/PROPOSALS.md) | Question changes awaiting a human decision. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, where changes go, and what needs evidence. |
@@ -208,7 +227,7 @@ markets where research beats the price is the open question.
 ```bash
 make setup                 # venv, deps, .env from the template
 # put your own keys in .env; it is gitignored. Never commit or paste it.
-make check                 # ruff + 190 tests, no network, no keys needed
+make check                 # ruff + 197 tests, no network, no keys needed
 python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 
@@ -255,8 +274,13 @@ and returns HTML. A 20 h cooldown stops a market being re-triaged every sweep.
 
 ```bash
 python verify_account.py                 # read-only account check
-SWARM_MODE=paper python daemon.py --once --tags nfl --start-window 4 --min-hours 1
+SWARM_MODE=paper python daemon.py --once --tags nfl --start-window 4 --min-hours 1 \
+    --research-per-cycle 5 --research-per-event 1
+python traces.py --backfill --score    # after settlement: Tier 3 Brier vs the market's
 ```
+
+Every market is triaged; only the best few by gate score are researched,
+at most one per event by default, since an event's legs resolve together.
 
 An unfunded account reads as NLV $0 and trips the kill switch at startup.
 That is the floor working.
@@ -268,6 +292,7 @@ Enforced in code and tests; see [CLAUDE.md](CLAUDE.md) for the full list.
 - No order is created outside `daemon.py`.
 - No LLM output is ever a dollar amount, share count or Kelly fraction.
 - The restricted veto is never widened and never averaged.
+- One event holds at most 10% of bankroll, enforced in code after sizing.
 - `SWARM_MODE` defaults to `shadow`.
 - The kill switch exits 2 and writes `.halted`. Nothing clears it but a human.
 
@@ -279,13 +304,11 @@ Enforced in code and tests; see [CLAUDE.md](CLAUDE.md) for the full list.
 
 ## Not built yet
 
-- Per-event exposure cap. Props on one game are one bet; today they reserve
-  separately. Required before live trading.
-- Settlement backfill for `traces.db`, so Tier 3 can be scored against the
-  price it was shown.
 - Event-scoped fact cache, so 30 props on one game share one search.
 - Scheduled daily collection across categories. This is what produces a
   sample large enough to mean anything.
+- Fast-lane order path. Deliberately absent until `fastlane.py --score`
+  shows drift that beats the spread over several days.
 - A learning loop over resolved markets. Designed, deliberately not built:
   it needs thousands of resolved markets across many days first.
 

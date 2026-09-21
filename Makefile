@@ -1,4 +1,4 @@
-.PHONY: setup test lint check shadow backfill analyze sweep score calibrate probe paper clean
+.PHONY: setup test lint check shadow backfill analyze sweep score calibrate probe fastlane fastlane-score paper clean
 
 VENV := .venv
 
@@ -54,3 +54,9 @@ clean:
 # Deliberately no `make live` target. Live trading should be a conscious
 # command typed in a terminal, not a target you can fat-finger from a
 # tab-complete.
+
+fastlane:              ## shadow-only: Jev reads headlines, prices are followed (no orders)
+	$(PY) fastlane.py --tags nfl --start-window 6 --minutes 240
+
+fastlane-score:
+	$(PY) fastlane.py --score

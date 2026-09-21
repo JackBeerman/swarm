@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 470" width="960" height="470" role="img" aria-labelledby="t d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="t">two lanes: Jev for savings, Jev for speed</title>
+  <desc id="d">Left: the slow lane, where Jev filters markets before expensive LLM research, taking about a minute per market. Right: the fast lane, where an LLM writes a brief ahead of time and Jev reads each headline against it in about 300 milliseconds with no LLM on the path.</desc>
+  <style>
+    .bg{fill:#ffffff}.ink{fill:#1f2328}.mute{fill:#59636e}.line{stroke:#d1d9e0}
+    .code{fill:#eef1f4;stroke:#c8d1da}.jev{fill:#dafbe1;stroke:#1a7f37}.jevink{fill:#116329}
+    .llm{fill:#ddf4ff;stroke:#0969da}.llmink{fill:#0550ae}.arrow{stroke:#8c959f;fill:none}.ah{fill:#8c959f}
+    .panel{fill:none;stroke:#d1d9e0}.clock{fill:#fff8c5;stroke:#9a6700}.clockink{fill:#7d4e00}
+    @media (prefers-color-scheme: dark){
+      .bg{fill:#0d1117}.ink{fill:#f0f6fc}.mute{fill:#9198a1}.line{stroke:#3d444d}
+      .code{fill:#1c232c;stroke:#3d444d}.jev{fill:#12261e;stroke:#3fb950}.jevink{fill:#56d364}
+      .llm{fill:#121d2f;stroke:#4493f8}.llmink{fill:#79c0ff}.arrow{stroke:#656c76}.ah{fill:#656c76}
+      .panel{stroke:#3d444d}.clock{fill:#2a2111;stroke:#d29922}.clockink{fill:#e3b341}
+    }
+  </style>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0L10 5L0 10z"/></marker></defs>
+  <rect class="bg" width="960" height="470" rx="12"/>
+
+  <text class="ink" x="40" y="42" font-size="20" font-weight="700">Two ways to use a 300 ms judgment</text>
+
+  <!-- LEFT: slow lane -->
+  <rect class="panel" x="40" y="66" width="420" height="380" rx="10"/>
+  <text class="ink" x="60" y="94" font-size="15" font-weight="700">Slow lane · Jev for savings</text>
+  <text class="mute" x="60" y="112" font-size="12">daemon.py · shadow / paper / live</text>
+
+  <rect class="code" x="70" y="130" width="360" height="40" rx="7"/>
+  <text class="ink" x="86" y="155" font-size="13" font-weight="600">~10,000 markets → structural filter</text>
+  <path class="arrow" d="M250 170V186" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect class="jev" x="70" y="188" width="360" height="52" rx="7" stroke-width="2"/>
+  <text class="ink" x="86" y="209" font-size="13" font-weight="600">Jev: what kind of market is this?</text>
+  <text class="mute" x="86" y="228" font-size="12">veto · floors · gate score — ~$0.00008</text>
+  <path class="arrow" d="M250 240V256" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect class="llm" x="70" y="258" width="360" height="52" rx="7"/>
+  <text class="ink" x="86" y="279" font-size="13" font-weight="600">Haiku ×3 + search, then Opus</text>
+  <text class="mute" x="86" y="298" font-size="12">only the best few per cycle — ~$0.12, ~60 s</text>
+  <path class="arrow" d="M250 310V326" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect class="code" x="70" y="328" width="360" height="40" rx="7"/>
+  <text class="ink" x="86" y="353" font-size="13" font-weight="600">size in code → daemon.py places the order</text>
+
+  <rect class="clock" x="70" y="392" width="360" height="36" rx="7"/>
+  <text class="clockink" x="86" y="415" font-size="12.5" font-weight="600">Path to an order: ~1 minute. Jev cuts cost, not latency.</text>
+
+  <!-- RIGHT: fast lane -->
+  <rect class="panel" x="500" y="66" width="420" height="380" rx="10"/>
+  <text class="ink" x="520" y="94" font-size="15" font-weight="700">Fast lane · Jev for speed</text>
+  <text class="mute" x="520" y="112" font-size="12">fastlane.py · shadow only, no orders</text>
+
+  <text class="mute" x="530" y="140" font-size="11" font-weight="700" letter-spacing="1">AHEAD OF TIME</text>
+  <rect class="llm" x="530" y="146" width="360" height="52" rx="7"/>
+  <text class="ink" x="546" y="167" font-size="13" font-weight="600">LLM + search writes a brief per event</text>
+  <text class="mute" x="546" y="186" font-size="12">who plays for whom — ~$0.02, once, before kickoff</text>
+
+  <text class="mute" x="530" y="226" font-size="11" font-weight="700" letter-spacing="1">WHEN A HEADLINE LANDS</text>
+  <rect class="code" x="530" y="232" width="360" height="36" rx="7"/>
+  <text class="ink" x="546" y="255" font-size="13" font-weight="600">RSS feed → headline + brief + watched markets</text>
+  <path class="arrow" d="M710 268V284" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect class="jev" x="530" y="286" width="360" height="66" rx="7" stroke-width="2"/>
+  <text class="ink" x="546" y="307" font-size="13" font-weight="600">Jev, one request, 15 questions</text>
+  <text class="mute" x="546" y="325" font-size="12">new fact? our event? political? per market:</text>
+  <text class="mute" x="546" y="341" font-size="12">raises / lowers / no effect, and how much</text>
+  <path class="arrow" d="M710 352V368" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect class="code" x="530" y="370" width="360" height="16" rx="4"/>
+  <text class="mute" x="546" y="382" font-size="10.5">record quote now, +1 / +5 / +30 min → did the book move Jev's way?</text>
+
+  <rect class="clock" x="530" y="392" width="360" height="36" rx="7"/>
+  <text class="clockink" x="546" y="415" font-size="12.5" font-weight="600">Path to a decision: ~300 ms. No LLM on it.</text>
+</svg>

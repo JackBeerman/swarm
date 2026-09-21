@@ -89,6 +89,10 @@ class RiskConfig:
     max_position_fraction: float = 0.08     # <=8% of bankroll in one market
     min_notional_usd: float = 2.00
     min_edge: float = 0.10                  # see note in size_from_signal()
+    # Every market inside one event resolves together -- a 9-3 final loses
+    # each low "over" at once -- so four props on one game are one bet, not
+    # four. The per-market cap above does not see that; this one does.
+    max_event_fraction: float = 0.10        # <=10% of bankroll in one EVENT
     max_spread: float = 0.04                # skip anything wider than 4c
 
 
@@ -811,6 +815,24 @@ class PortfolioLock:
         return len(self._reserved)
 
 
+def cap_to_event(
+    order: SizedOrder, already_usd: float, bankroll: float, risk: RiskConfig
+) -> SizedOrder | None:
+    """
+    Fit an order inside what its event may still hold, or return None.
+
+    Whole shares, floored -- rounding up would breach the cap it enforces.
+    """
+    room = risk.max_event_fraction * bankroll - already_usd
+    if order.notional_usd <= room:
+        return order
+    quantity = int(room // order.limit_price) if order.limit_price > 0 else 0
+    notional = quantity * order.limit_price
+    if quantity < 1 or notional < risk.min_notional_usd:
+        return None
+    return order.model_copy(update={"quantity": quantity, "notional_usd": notional})
+
+
 def size_from_signal(
     signal: TradeSignal,
     bbo: dict[str, Any],
@@ -902,6 +924,9 @@ class Swarm:
     risk: RiskConfig = field(default_factory=RiskConfig)
     limits: StructuralLimits = field(default_factory=StructuralLimits)
     portfolio: PortfolioLock = field(default_factory=PortfolioLock)
+    # USD already sized per event. Seeded by the daemon from open paper/live
+    # evaluations in traces.db, so the cap survives a restart.
+    event_exposure: dict[str, float] = field(default_factory=dict)
     max_concurrent_evaluations: int = 2
 
     def __post_init__(self) -> None:
@@ -1027,6 +1052,19 @@ class Swarm:
                 if order is None:
                     result.halted_at = "no_edge_after_sizing"
                     return result
+
+                # Per-EVENT cap, in code, after sizing. Shrinks the order
+                # to the room left in its event, or drops it.
+                event = str(market.get("event_slug") or slug)
+                order = cap_to_event(
+                    order, self.event_exposure.get(event, 0.0), bankroll, self.risk
+                )
+                if order is None:
+                    result.halted_at = "event_exposure_cap"
+                    return result
+                self.event_exposure[event] = (
+                    self.event_exposure.get(event, 0.0) + order.notional_usd
+                )
                 self.portfolio.reserve(slug, order.notional_usd)
 
             result.order = order

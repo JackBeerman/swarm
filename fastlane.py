@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS headlines (
     published_at  TEXT,
     lag_seconds   REAL,                 -- seen - published: the feed's delay
     source        TEXT NOT NULL,
-    url           TEXT UNIQUE,
+    url           TEXT,
     title         TEXT,
     summary       TEXT
 );
@@ -126,6 +126,9 @@ CREATE TABLE IF NOT EXISTS signals (
     mid_30m           REAL
 );
 CREATE INDEX IF NOT EXISTS idx_sig_headline ON signals(headline_id);
+-- A "live updates" item keeps its URL and changes its title as news
+-- breaks (seen: Yahoo, 2026-09-21). Identity is URL + title.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_head_url_title ON headlines(url, title);
 """
 
 
@@ -474,7 +477,7 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
 
             first = [h for batch in await asyncio.gather(
                 *(poll_feed(client, s, u) for s, u in FEEDS.items())) for h in batch]
-            seen = {h["url"] for h in first}
+            seen = {(h["url"], h["title"]) for h in first}
             log.info("baseline: %d existing items across %d feeds", len(first), len(FEEDS))
             if replay:
                 newest = sorted(first, key=lambda h: h["published_at"] or "", reverse=True)
@@ -487,9 +490,10 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
                 batches = await asyncio.gather(
                     *(poll_feed(client, s, u) for s, u in FEEDS.items()))
                 for h in (h for b in batches for h in b):
-                    if h["url"] in seen:
+                    key = (h["url"], h["title"])
+                    if key in seen:
                         continue
-                    seen.add(h["url"])
+                    seen.add(key)
                     await rec.handle(h)
 
             if rec.pending and not replay:

@@ -1186,3 +1186,48 @@ async def test_every_restricted_question_reads_the_outcome_leg():
 async def test_politics_is_not_sampled_by_default():
     from adapters import DEFAULT_TAG_MIX
     assert "politics" not in DEFAULT_TAG_MIX
+
+
+# --- per-event exposure cap ------------------------------------------------
+
+def _order(qty=8, price=0.50):
+    sig = TradeSignal(market_slug="m", side=Side.YES, probability=0.7, confidence=0.8,
+                      reasoning="r", disqualifiers=[], abstain=False)
+    from schemas import SizedOrder
+    return SizedOrder(market_slug="m", side=Side.YES, limit_price=price, quantity=qty,
+                      notional_usd=qty * price, raw_kelly=0.3, applied_fraction=0.04,
+                      edge=0.15, bankroll_at_size=100.0, signal=sig)
+
+
+async def test_event_cap_passes_an_order_that_fits():
+    assert sw.cap_to_event(_order(8), 0.0, 100.0, sw.RiskConfig()).quantity == 8
+
+
+async def test_event_cap_shrinks_to_the_room_left_floored():
+    """
+    Props on one game resolve together, so they are one bet. $10 cap, $7.20
+    already in the event -> $2.80 of room -> 5 shares at 0.50, never 6.
+    """
+    out = sw.cap_to_event(_order(8), 7.20, 100.0, sw.RiskConfig())
+    assert out.quantity == 5 and out.notional_usd == pytest.approx(2.50)
+
+
+async def test_event_cap_drops_an_order_too_small_to_be_worth_placing():
+    assert sw.cap_to_event(_order(8), 9.00, 100.0, sw.RiskConfig()) is None
+
+
+@respx.mock
+async def test_second_prop_on_one_game_is_capped(monkeypatch):
+    respx.post("https://api.typesafe.ai/v1/systemone").mock(
+        return_value=httpx.Response(200, json=jev_body())
+    )
+    patch_llms(monkeypatch)
+    s = make_swarm(FakeBudget(bankroll=100.0))
+    first = await s.evaluate({**MARKET, "slug": "g-over", "event_slug": "game"}, BBO)
+    second = await s.evaluate({**MARKET, "slug": "g-spread", "event_slug": "game"}, BBO)
+    other = await s.evaluate({**MARKET, "slug": "x", "event_slug": "other-game"}, BBO)
+    await s.jev.aclose()
+    assert first.order is not None and other.order is not None
+    total = first.order.notional_usd + (second.order.notional_usd if second.order else 0.0)
+    assert total <= 10.0 + 1e-9, "one event may hold at most 10% of bankroll"
+    assert s.event_exposure["game"] == pytest.approx(total)

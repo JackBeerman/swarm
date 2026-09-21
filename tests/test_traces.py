@@ -96,3 +96,30 @@ def test_score_compares_tier3_to_the_price_it_was_shown(tmp_path, capsys):
     assert "1 resolved evaluations" in out
     # tier3 said 0.93, market mid 0.815, outcome YES -> tier3 closer
     assert "tier3 better" in out
+
+
+def test_open_event_exposure_sums_unresolved_orders_by_event(tmp_path):
+    """Seeds the per-event cap so it survives a restart."""
+    conn = traces.connect(str(tmp_path / "t.db"))
+    game = {**MARKET, "event_slug": "nfl-nyg-lar"}
+    traces.record(conn, "paper", _result(), game, BBO)          # $2.46
+    traces.record(conn, "paper", _result(), game, BBO)          # $2.46, same event
+    traces.record(conn, "live", _result(), game, BBO)           # other mode
+    traces.record(conn, "paper", _result(with_order=False), game, BBO)
+    conn.execute("UPDATE evaluations SET resolved_outcome='1' WHERE id=2")
+    conn.commit()
+    assert traces.open_event_exposure(conn, "paper") == {"nfl-nyg-lar": pytest.approx(2.46)}
+    conn.close()
+
+
+def test_connect_migrates_a_database_made_before_event_slug(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    c = sqlite3.connect(path)
+    c.execute("CREATE TABLE evaluations (id INTEGER PRIMARY KEY, at TEXT NOT NULL,"
+              " mode TEXT NOT NULL, market_slug TEXT NOT NULL, order_notional REAL,"
+              " resolved_outcome TEXT)")
+    c.commit(); c.close()
+    conn = traces.connect(path)
+    assert "event_slug" in {r["name"] for r in conn.execute("PRAGMA table_info(evaluations)")}
+    conn.close()
