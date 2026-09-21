@@ -668,9 +668,18 @@ async def _synthesize(
                 {"role": "user", "content": json.dumps(payload, default=str)},
             ],
             **sampling_kwargs(TIER3_MODEL, 0.1),
-            max_tokens=1200,
+            # Claude Opus 5 thinks by default, and thinking tokens count
+            # against max_tokens. At the original 1200 the reasoning could
+            # consume the whole budget and truncate the JSON -- which is
+            # handled "gracefully" below (no order), and so would burn
+            # ~$0.10 per escalation while looking exactly like the sizer
+            # declining. This is a ceiling, not a spend.
+            max_tokens=4000,
         )
         costs.append(_cost_of(resp, "synthesize", TIER3_MODEL))
+        if getattr(resp.choices[0], "finish_reason", None) == "length":
+            log.warning("synthesis hit max_tokens on %s -- answer truncated; "
+                        "this is NOT the model abstaining", state.get("slug"))
         data = _loads_loose(resp.choices[0].message.content)
         data["market_slug"] = state.get("slug")
         return TradeSignal.model_validate(data)
