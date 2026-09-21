@@ -209,7 +209,7 @@ def structural_filter(
 RESTRICTED_QUESTIONS: dict[str, dict[str, Any]] = {
     # Decomposed from one broad "restricted_domain" question. Each names a
     # distinct way a market could fall in a domain the operator does not
-    # trade on. Any one of them firing is disqualifying.
+    # trade. Any one of them firing is disqualifying.
     "federal_policy_outcome": {
         "type": "noul",
         "instructions": {
