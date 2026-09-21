@@ -103,6 +103,11 @@ CREATE TABLE IF NOT EXISTS verdicts (
     event_title              TEXT,
     period                   TEXT,
     hours_to_event           REAL,
+    -- what Jev actually saw. Without these a stored verdict cannot be
+    -- REPLAYED against a rewritten question, and a learning loop that
+    -- proposes question edits has nothing to validate them on.
+    description              TEXT,
+    tags                     TEXT,
     -- resolution is backfilled later; this is what makes the data
     -- worth anything. A gate you never scored against outcomes is
     -- just a rate limiter.
@@ -140,6 +145,8 @@ _MIGRATIONS = {
     "event_title": "TEXT",
     "period": "TEXT",
     "hours_to_event": "REAL",
+    "description": "TEXT",
+    "tags": "TEXT",
 }
 
 
@@ -200,9 +207,9 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             escalate, veto_reason, gate_score, latency_ms,
             input_tokens, output_tokens,
             liquidity_usd, bid_shares, ask_shares, model, outcome,
-            event_title, period, hours_to_event
+            event_title, period, hours_to_event, description, tags
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                  ?,?,?,?,?,?,?,?)""",
+                  ?,?,?,?,?,?,?,?,?,?)""",
         (
             datetime.now(timezone.utc).isoformat(),
             v.market_slug,
@@ -239,6 +246,8 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             market.get("event_title"),
             market.get("period"),
             _hours_until(market.get("event_at")),
+            (market.get("description") or "")[:1500],
+            json.dumps(market.get("tags") or []),
         ),
     )
     conn.commit()
@@ -481,6 +490,73 @@ async def backfill(limit: int = 500, pause: float = 2.0) -> None:
              filled, pending, failed)
 
 
+def _event_key(slug: str) -> str:
+    """
+    The game/event a market belongs to, from its slug. Markets inside one
+    event resolve TOGETHER -- a 9-3 final loses every low "over" at once --
+    so the honest sample size is the number of events, not markets.
+    """
+    import re
+    m = re.search(r"([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-\d{4}-\d{2}-\d{2})", slug or "")
+    return m.group(1) if m else (slug or "").rsplit("-", 2)[0]
+
+
+def calibrate(db: str = DB_PATH, max_spread: float = 0.10) -> None:
+    """
+    The most general thing the betting slips can teach: when the market
+    says X, how often does it happen?
+
+    Pools EVERY settled market with a quote -- escalated or not, any
+    category -- so it needs no model and grows with every market
+    collected. It is arithmetic, so it lives in code. A persistent gap
+    between price and frequency is a bias you can trade without research.
+
+    Read the `events` column before the `gap` column. On 2026-09-20 the
+    0.92-0.96 band showed 94% priced vs 82% realized over 93 markets and
+    +164% for buying NO -- and nearly all 93 were "overs" from ~15 games
+    on one low-scoring Sunday. That is a weekend, not a bias, until it
+    survives many days and many categories.
+    """
+    with closing(connect(db)) as conn:
+        rows = conn.execute(
+            """SELECT market_slug, bid, ask, resolved_outcome
+               FROM verdicts
+               WHERE resolved_outcome IS NOT NULL
+                 AND bid IS NOT NULL AND ask IS NOT NULL
+               GROUP BY market_slug"""
+        ).fetchall()
+    rows = [r for r in rows if (r["ask"] - r["bid"]) <= max_spread]
+    print("=" * 78)
+    print(f"  calibration over {len(rows)} settled markets "
+          f"({len({_event_key(r['market_slug']) for r in rows})} events), "
+          f"spread <= {max_spread}")
+    print("=" * 78)
+    if not rows:
+        print("\n  nothing settled yet. Run --backfill.")
+        return
+    buckets = [(0.0, 0.10), (0.10, 0.30), (0.30, 0.50), (0.50, 0.70),
+               (0.70, 0.85), (0.85, 0.92), (0.92, 0.96), (0.96, 1.01)]
+    print(f"\n  {'price':<11}{'mkts':>5}{'events':>7}{'priced':>8}{'won':>7}"
+          f"{'gap':>8}{'YES@ask':>10}{'NO@1-bid':>10}")
+    for lo, hi in buckets:
+        rs = [r for r in rows if lo <= (r["bid"] + r["ask"]) / 2 < hi]
+        if not rs:
+            continue
+        n = len(rs)
+        ev = len({_event_key(r["market_slug"]) for r in rs})
+        priced = sum(r["ask"] for r in rs) / n
+        won = sum(r["resolved_outcome"] == "1" for r in rs) / n
+        yes = sum((1 - r["ask"]) if r["resolved_outcome"] == "1" else -r["ask"]
+                  for r in rs) / sum(r["ask"] for r in rs)
+        no_stake = sum(1 - r["bid"] for r in rs)
+        no = (sum(r["bid"] if r["resolved_outcome"] == "0" else -(1 - r["bid"])
+                  for r in rs) / no_stake) if no_stake else 0.0
+        print(f"  {lo:.2f}-{min(hi, 1.0):.2f}  {n:>5}{ev:>7}{priced:>8.3f}{won:>7.0%}"
+              f"{won - priced:>+8.3f}{yes:>+10.0%}{no:>+10.0%}")
+    print("\n  markets in one event resolve together; `events` is the real n.\n"
+          "  A gap is a hypothesis until it holds across days AND categories.")
+
+
 def score(db: str = DB_PATH) -> None:
     """
     Was the gate escalating the RIGHT markets?
@@ -717,6 +793,9 @@ def main() -> None:
     ap.add_argument("--sweep", metavar="FIELD")
     ap.add_argument("--backfill", action="store_true",
                     help="fill resolved_outcome for settled markets")
+    ap.add_argument("--calibrate", action="store_true",
+                    help="price vs realized frequency over every settled "
+                         "market, with event counts")
     ap.add_argument("--score", action="store_true",
                     help="was the gate escalating the RIGHT markets?")
     ap.add_argument("--tags", default=None,
@@ -755,6 +834,9 @@ def main() -> None:
         return 0
     if args.score:
         score()
+        return 0
+    if args.calibrate:
+        calibrate()
         return 0
     if args.collect:
         asyncio.run(collect(

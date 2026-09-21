@@ -122,3 +122,43 @@ def test_migration_adds_columns_to_an_old_database(tmp_path):
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(verdicts)")}
     conn.close()
     assert set(shadow._MIGRATIONS) <= cols
+
+
+def test_store_keeps_what_jev_saw_for_replay(db):
+    """A learning loop that rewrites questions needs the original text."""
+    m = {**MARKET, "description": "Resolves YES if PHI records 22+ first downs.",
+         "tags": ["nfl", "sports"]}
+    shadow.store(db, _sports_verdict(), m, BBO)
+    r = db.execute("SELECT description, tags FROM verdicts").fetchone()
+    assert r["description"].startswith("Resolves YES")
+    assert r["tags"] == '["nfl", "sports"]'
+
+
+def test_event_key_groups_markets_that_resolve_together():
+    """
+    "over 21.5" and "over 27.5" in one game are not independent draws --
+    a 9-3 final loses both. The event count is the honest sample size.
+    """
+    a = shadow._event_key("tsc-nfl-min-chi-2026-09-20-total-21pt5")
+    b = shadow._event_key("tsc-nfl-min-chi-2026-09-20-total-27pt5")
+    c = shadow._event_key("tsc-nfl-pit-ne-2026-09-20-total-24pt5")
+    assert a == b != c
+
+
+def test_calibrate_reports_events_not_just_markets(tmp_path, capsys):
+    path = str(tmp_path / "cal.db")
+    conn = shadow.connect(path)
+    for i, (slug, outcome) in enumerate([
+        ("tsc-nfl-min-chi-2026-09-20-total-21pt5", "0"),
+        ("tsc-nfl-min-chi-2026-09-20-total-24pt5", "0"),
+        ("tsc-nfl-car-atl-2026-09-20-total-26pt5", "1"),
+    ]):
+        conn.execute(
+            "INSERT INTO verdicts (seen_at, market_slug, bid, ask, escalate, "
+            "resolved_outcome) VALUES (?,?,?,?,?,?)",
+            ("t", slug, 0.93, 0.94, 1, outcome))
+    conn.commit(); conn.close()
+    shadow.calibrate(path)
+    out = capsys.readouterr().out
+    assert "3 settled markets (2 events)" in out
+    assert "0.92-0.96" in out
