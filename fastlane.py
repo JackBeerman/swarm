@@ -561,6 +561,28 @@ def score(db: str = DB_PATH) -> None:
             cells.append(f"{statistics.mean(means):+.4f}" if means else "      --")
         print(f"  {label:<22}{len({r['headline_id'] for r in rs}):>10}{len(rs):>6}"
               + "".join(f"{c:>9}" for c in cells))
+    # Which QUESTION earns its place? Signed +5m drift, per headline, split
+    # at each question's threshold, among rows Jev gave a direction. A
+    # question whose high side does not beat its low side is dead weight
+    # on the live path. This is the reward signal for the question set.
+    th = FastLaneThresholds()
+    directional = [r for r in rows if r["effect"] in ("raises", "lowers") and r["mid_5m"] is not None]
+    if directional:
+        print(f"\n  {'question':<20}{'split':>8}{'above: heads':>14}{'drift':>9}"
+              f"{'below: heads':>14}{'drift':>9}")
+        for name, col, cut in (("reports_new_fact", "reports_new_fact", th.min_new_fact),
+                               ("effect_conf", "effect_conf", th.min_effect_confidence),
+                               ("size", "size", th.min_size)):
+            sides = []
+            for pick in (lambda r: r[col] >= cut, lambda r: r[col] < cut):
+                per: dict[int, list[float]] = {}
+                for r in directional:
+                    if pick(r):
+                        d = (r["mid_5m"] - (r["bid0"] + r["ask0"]) / 2) * (1 if r["effect"] == "raises" else -1)
+                        per.setdefault(r["headline_id"], []).append(d)
+                means = [statistics.mean(v) for v in per.values()]
+                sides.append((len(means), f"{statistics.mean(means):+.4f}" if means else "     --"))
+            print(f"  {name:<20}{cut:>8.2f}{sides[0][0]:>14}{sides[0][1]:>9}{sides[1][0]:>14}{sides[1][1]:>9}")
     print("\n  Positive signed drift means the book moved the way Jev said AFTER we saw the\n"
           "  headline. It has to beat the spread (~0.02) and the control's drift to matter,\n"
           "  and it needs dozens of acted headlines across several days before it is a finding.")
