@@ -219,6 +219,7 @@ markets where research beats the price is the open question.
 | [tools/](tools/) | `probe_restricted.py`, `probe_fastlane.py`, `survey_tags.py`, `by_category.py`. |
 | [tests/](tests/) | 197 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
+| [docs/BRIEF.md](docs/BRIEF.md) | Design: the brief that gives Jev its information, and the loop that revises it. |
 | [docs/PROPOSALS.md](docs/PROPOSALS.md) | Question changes awaiting a human decision. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, where changes go, and what needs evidence. |
 
