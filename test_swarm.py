@@ -1165,6 +1165,8 @@ async def test_political_tag_matching():
     assert political_tag(["Elections 2028"]) == "elections-2028"
     assert political_tag([{"slug": "geopolitics", "label": "Geopolitics"}])
     assert political_tag(["ukraine-war"]) == "ukraine-war"
+    assert political_tag(["us-pol"]) == "us-pol", "seen on the wire"
+    assert political_tag(["polo", "pole-vault"]) is None
     # Sports and awards must not trip the "war" rule.
     assert political_tag(["nba", "warriors", "awards", "nfl", "sports"]) is None
     assert political_tag(None) is None

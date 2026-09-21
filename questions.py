@@ -100,6 +100,10 @@ def political_tag(tags: Any) -> str | None:
     for t in tags or []:
         slug = str(t.get("slug") or t.get("label") or "") if isinstance(t, dict) else str(t)
         slug = slug.lower().replace(" ", "-")
+        # Seen on the wire 2026-09-21: `us-pol`. "politic" does not match
+        # it, so abbreviations are matched as whole hyphen-separated tokens.
+        if {"pol", "pols", "gov", "govt", "potus", "scotus"} & set(slug.split("-")):
+            return slug
         for w in POLITICAL_TAG_WORDS:
             # "war" must not match "warriors" or "award".
             if w == "war":
