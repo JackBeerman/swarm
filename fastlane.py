@@ -574,10 +574,10 @@ def score(db: str = DB_PATH) -> None:
                                ("effect_conf", "effect_conf", th.min_effect_confidence),
                                ("size", "size", th.min_size)):
             sides = []
-            for pick in (lambda r: r[col] >= cut, lambda r: r[col] < cut):
+            for above in (True, False):
                 per: dict[int, list[float]] = {}
                 for r in directional:
-                    if pick(r):
+                    if (r[col] >= cut) == above:
                         d = (r["mid_5m"] - (r["bid0"] + r["ask0"]) / 2) * (1 if r["effect"] == "raises" else -1)
                         per.setdefault(r["headline_id"], []).append(d)
                 means = [statistics.mean(v) for v in per.values()]
