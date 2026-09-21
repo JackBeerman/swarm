@@ -11,9 +11,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sys
 
-OK, BAD, WARN = "  [ok]  ", "  [FAIL]", "  [warn]"
+# swarm.py reads TYPESAFE_DEFAULT_MODEL at import time, and check_local()
+# imports it. Load .env first or every check below runs on jev-latest.
+from config import load_dotenv_if_present  # noqa: E402
+
+load_dotenv_if_present()
+
+OK, BAD, WARN ="  [ok]  ", "  [FAIL]", "  [warn]"
 
 
 def check_imports() -> bool:
@@ -59,8 +66,9 @@ def check_config() -> bool:
         print(f"{BAD} {p}")
     if not problems:
         print(f"{OK} valid for mode={cfg.mode}")
-    if cfg.jev_model.endswith("latest"):
-        print(f"{WARN} {cfg.jev_model} floats -- pin a dated id before live")
+    if not re.fullmatch(r"jev-\d+\.\d+\.\d+", cfg.jev_model):
+        print(f"{WARN} {cfg.jev_model} floats -- pin a versioned id "
+              "(jev-1.13.0) before live")
     return not problems
 
 

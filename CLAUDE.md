@@ -96,12 +96,12 @@ name here, check it against a live response, not against
 ### Jev / TypeSafe
 
 - **Noul answers carry no `confidence` field.** Only Choice and Score do.
-- `jev-latest` floats, **and so does the family slug `jev-1.13`** —
-  OpenRouter states it always redirects to the newest model. An unpinned
-  model silently recalibrates every threshold in `questions.py`. Config
-  refuses live mode with an unpinned id.
-- Pricing: **$0.042/M input, $0 output, 32K context.** ~$0.000067 per
-  triage call. Tier 1 is effectively free; do not optimize it.
+- `jev-latest`, `jev-preview` **and the family slug `jev-1.13`** all
+  float. The only pinned form is `jev-1.13.0`; there are no dated ids. An
+  unpinned model silently recalibrates every threshold in `questions.py`.
+  Config refuses live mode unless the id matches `jev-N.N.N`.
+- Pricing: **$0.042/M input, $0 output.** 64k tokens per request, 32k for
+  state + longest question. ~$0.000067 per triage call; do not optimize it.
 - 429 and 529 require exponential backoff. Hand-rolled client does this in
   `JevTriage._post`; the official SDKs would do it for you.
 

@@ -77,7 +77,7 @@ def jev_body(**overrides):
         ans = answers[k]
         ans[{"noul": "noul", "score": "score", "choice": "choice"}[ans["type"]]] = v
     return {
-        "model": "jev-1.13-20260917",
+        "model": "jev-1.13.0",
         "answers": answers,
         "usage": {"input_tokens": 1580, "output_tokens": 0},
     }
@@ -643,7 +643,10 @@ async def test_rate_limit_is_retried_with_backoff(monkeypatch):
     v = await jev.evaluate(MARKET, BBO)
     assert v.escalate is True
     assert route.call_count == 3
-    assert slept == [0.5, 1.0], f"expected exponential backoff, got {slept}"
+    assert len(slept) == 2, slept
+    assert 0.5 <= slept[0] <= 0.625 and 1.0 <= slept[1] <= 1.25, (
+        f"expected jittered exponential backoff, got {slept}"
+    )
     await jev.aclose()
 
 
@@ -1049,3 +1052,75 @@ async def test_missing_jev_answer_raises_rather_than_vetoing():
     with pytest.raises(RuntimeError, match="stat_aggregation"):
         await jev.evaluate(SPORTS_MARKET, BBO)
     await jev.aclose()
+
+
+@respx.mock
+@pytest.mark.parametrize("bad", [
+    {"type": "noul", "noul": None},
+    {"type": "noul"},
+    {"type": "noul", "noul": "0.9"},
+    {"type": "noul", "noul": 1.7},
+    "not-an-object",
+])
+async def test_malformed_restricted_noul_never_reads_as_unrestricted(bad):
+    """
+    The veto must fail CLOSED. A present-but-malformed restricted answer
+    used to parse as 0.0, which is "not restricted" -- the permissive
+    direction on the one rule that is not a tuning knob.
+    """
+    body = jev_body()
+    body["answers"]["defense_or_military"] = bad
+    respx.post("https://api.typesafe.ai/v1/systemone").mock(
+        return_value=httpx.Response(200, json=body)
+    )
+    jev = sw.JevTriage(api_key="k")
+    with pytest.raises(RuntimeError, match="defense_or_military"):
+        await jev.evaluate(MARKET, BBO)
+    await jev.aclose()
+
+
+@respx.mock
+async def test_unasked_questions_keep_their_defaults():
+    """Strict parsing covers what was asked; a sports market is never
+    asked research_would_help and must not raise for lacking it."""
+    respx.post("https://api.typesafe.ai/v1/systemone").mock(
+        return_value=httpx.Response(200, json=sports_jev_body())
+    )
+    jev = sw.JevTriage(api_key="k")
+    v = await jev.evaluate(SPORTS_MARKET, BBO)
+    await jev.aclose()
+    assert v.is_sports and v.research_would_help == 0.0
+
+
+async def test_confidence_route_does_not_veto_sports_on_an_unasked_question():
+    """
+    research_would_help is never asked on sports, so research_confidence is
+    a default 0.0. Raising min_research_confidence must not read that as
+    "Jev was unsure" and veto every sports market.
+    """
+    from dataclasses import replace
+    v = TriageVerdict(
+        market_slug="nfl-x", is_sports=True, objective_resolution=0.9,
+        stat_aggregation=1.9, pregame_information_edge=1.6,
+        sports_market_type="team_aggregate_stat",
+    )
+    out = sw.apply_gate(v, replace(sw.GateThresholds(), min_research_confidence=0.5))
+    assert out.escalate is True, out.veto_reason
+
+
+@respx.mock
+async def test_jev_retries_5xx_and_survives_a_junk_retry_after(monkeypatch):
+    """An HTTP-date retry-after used to raise ValueError out of the loop."""
+    async def no_sleep(_):
+        return None
+    monkeypatch.setattr(sw.asyncio, "sleep", no_sleep)
+    route = respx.post("https://api.typesafe.ai/v1/systemone").mock(
+        side_effect=[
+            httpx.Response(503, headers={"retry-after": "Mon, 21 Sep 2026 23:00:00 GMT"}),
+            httpx.Response(200, json=jev_body()),
+        ]
+    )
+    jev = sw.JevTriage(api_key="k")
+    v = await jev.evaluate(MARKET, BBO)
+    await jev.aclose()
+    assert route.call_count == 2 and v.model == "jev-1.13.0"

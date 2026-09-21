@@ -160,3 +160,28 @@ async def test_gives_up_after_max_retries():
     assert await s("q") == []
     assert route.call_count == 2
     assert s.failures == 1
+
+
+@respx.mock
+async def test_snippet_carries_the_cited_source_text():
+    """
+    Result blocks are encrypted; the only readable source text is
+    `cited_text` on the answer's citations. It used to be discarded, so a
+    gatherer was handed headlines and asked for facts.
+    """
+    body = ok_body(3)
+    body["content"].append({
+        "type": "text",
+        "text": "The starter is out.",
+        "citations": [{
+            "type": "web_search_result_location",
+            "url": "https://example.com/2",
+            "title": "Result 2",
+            "cited_text": "QB1 was ruled OUT on Saturday's final injury report.",
+        }],
+    })
+    respx.post(API).mock(return_value=httpx.Response(200, json=body))
+    out = await AnthropicSearch(api_key="k")("injury report")
+    assert out[0]["url"] == "https://example.com/2", "quoted sources first"
+    assert "ruled OUT" in out[0]["snippet"]
+    assert out[1]["snippet"] == "September 18, 2026", "uncited keeps page_age"

@@ -111,7 +111,7 @@ find out whether the escalated markets are *good*, not just few.
 ```bash
 export SWARM_MODE=live
 export I_UNDERSTAND_THIS_TRADES_REAL_MONEY=yes
-export TYPESAFE_DEFAULT_MODEL=jev-1.13-20260917   # must be pinned
+export TYPESAFE_DEFAULT_MODEL=jev-1.13.0   # must be pinned
 python daemon.py
 ```
 
@@ -139,7 +139,7 @@ exists. Delete it by hand after reviewing the `halts` table in
 
 ## Things that will bite you
 
-- `jev-latest` and `jev-1.13` both float. Pin a dated version or your
+- `jev-latest` and `jev-1.13` both float. Pin a versioned id (jev-1.13.0) or your
   thresholds silently recalibrate on a model update.
 - `CreateOrderParams.quantity` is an `int`. Whole shares only.
 - `GetUserPositionsResponse.positions` is a **dict** keyed by slug.

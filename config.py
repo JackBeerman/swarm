@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 
@@ -56,7 +57,7 @@ class Config:
     # jev-latest floats. OpenRouter says the family slug "always redirects
     # to the latest model", so pinning to jev-1.13 does NOT pin either --
     # a model update would silently recalibrate every gate threshold under
-    # you. Use a fully dated id once you have calibrated against one.
+    # you. Use a versioned id (jev-1.13.0) once you have calibrated against one.
     jev_model: str = "jev-latest"
     tier2_model: str = "anthropic/claude-haiku-4-5"
     tier3_model: str = "anthropic/claude-opus-5"
@@ -117,11 +118,13 @@ class Config:
                 problems.append(
                     "mode=live requires I_UNDERSTAND_THIS_TRADES_REAL_MONEY=yes"
                 )
-            if self.jev_model.endswith("latest"):
+            # `jev-preview` floats too, so the test is "is a versioned id",
+            # not "does not end in latest".
+            if not re.fullmatch(r"jev-\d+\.\d+\.\d+", self.jev_model):
                 problems.append(
                     f"mode=live with an unpinned model ({self.jev_model}). "
                     "A model update would recalibrate your gate thresholds "
-                    "silently. Pin a dated version."
+                    "silently. Pin a versioned id such as jev-1.13.0."
                 )
         return problems
 

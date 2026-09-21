@@ -27,7 +27,7 @@ async def test_paper_mode_requires_trading_credentials():
 
 async def test_live_requires_explicit_acknowledgement(monkeypatch):
     monkeypatch.delenv("I_UNDERSTAND_THIS_TRADES_REAL_MONEY", raising=False)
-    problems = base(mode="live", jev_model="jev-1.13-20260917").validate()
+    problems = base(mode="live", jev_model="jev-1.13.0").validate()
     assert any("I_UNDERSTAND_THIS_TRADES_REAL_MONEY" in p for p in problems)
 
 
@@ -41,7 +41,11 @@ async def test_live_refuses_an_unpinned_model(monkeypatch):
     problems = base(mode="live", jev_model="jev-latest").validate()
     assert any("unpinned" in p for p in problems)
 
-    ok = base(mode="live", jev_model="jev-1.13-20260917").validate()
+    # jev-preview floats as well; "does not end in latest" let it through.
+    problems = base(mode="live", jev_model="jev-preview").validate()
+    assert any("unpinned" in p for p in problems)
+
+    ok = base(mode="live", jev_model="jev-1.13.0").validate()
     assert ok == []
 
 

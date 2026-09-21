@@ -20,6 +20,7 @@ Two corrections to the original spec are baked in here and flagged inline:
 from __future__ import annotations
 
 import asyncio
+import random
 import json
 import logging
 import os
@@ -123,14 +124,14 @@ class JevTriage:
     """
     Thin async client over POST /v1/systemone.
 
-    Written against the raw HTTP contract rather than
-    langchain_typesafe.experimental.middleware on purpose -- an experimental
-    namespace two days after release is not where a money-handling daemon
-    should take a dependency.
+    Written against the raw HTTP contract. A first-party `typesafe-sdk`
+    exists and is the documented path; this client stays hand-rolled so
+    that a money-handling daemon parses every answer strictly, on its own
+    terms, and takes no dependency it has not read.
 
-    Retries 429 and 529 with exponential backoff, as the API reference
-    requires. The official SDKs do this for you; a hand-rolled client must
-    do it explicitly or it will fall over the first time the daemon runs a
+    Retries 408, 429, 5xx and transport errors with jittered exponential
+    backoff, the same policy the SDK applies. A hand-rolled client must do
+    it explicitly or it will fall over the first time the daemon runs a
     burst of triage calls against a rate limit.
     """
 
@@ -243,33 +244,61 @@ class JevTriage:
         return {k: state[k] for k in keys if state.get(k) not in (None, "", [])}
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """POST with exponential backoff on 429 / 529, per the API reference."""
+        """
+        POST with jittered exponential backoff on 408 / 429 / 5xx and on
+        transport errors, matching the first-party SDK's retry policy.
+        """
         delay = 0.5
         last: Exception | None = None
         for attempt in range(self._max_retries + 1):
             try:
                 resp = await self._client.post("/v1/systemone", json=payload)
-                if resp.status_code in (429, 529):
+                code = resp.status_code
+                if code in (408, 429) or code >= 500:
                     if attempt == self._max_retries:
                         resp.raise_for_status()
-                    retry_after = resp.headers.get("retry-after")
-                    wait = float(retry_after) if retry_after else delay
+                    # Jitter the computed backoff only. A wait the server
+                    # asked for is honoured as given.
+                    asked = self._retry_after(resp.headers)
+                    wait = min(asked, 30.0) if asked is not None else (
+                        delay * (1 + random.random() * 0.25))
                     log.debug(
                         "jev %s, retrying in %.1fs (attempt %d)",
-                        resp.status_code, wait, attempt + 1,
+                        code, wait, attempt + 1,
                     )
                     await asyncio.sleep(wait)
                     delay *= 2
                     continue
+                if code >= 400:
+                    # The body says WHICH question or field was rejected;
+                    # raise_for_status() alone throws that away.
+                    log.error(
+                        "jev %s request_id=%s body=%s", code,
+                        resp.headers.get("x-typesafe-request-id"),
+                        resp.text[:500],
+                    )
                 resp.raise_for_status()
                 return resp.json()
-            except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            except httpx.TransportError as exc:
                 last = exc
                 if attempt == self._max_retries:
                     raise
-                await asyncio.sleep(delay)
+                await asyncio.sleep(delay * (1 + random.random() * 0.25))
                 delay *= 2
         raise last or RuntimeError("jev request failed")
+
+    @staticmethod
+    def _retry_after(headers: Any) -> float | None:
+        """Seconds to wait, or None. An HTTP-date or junk value is ignored
+        rather than allowed to raise out of the retry loop."""
+        for name, scale in (("retry-after-ms", 0.001), ("retry-after", 1.0)):
+            try:
+                value = float(headers.get(name, "")) * scale
+            except (TypeError, ValueError):
+                continue
+            if value >= 0:
+                return value
+        return None
 
     async def evaluate(
         self,
@@ -330,14 +359,34 @@ class JevTriage:
                 f"Jev returned no answer for {sorted(missing)} on {slug}"
             )
 
-        def noul(name: str) -> float:
-            return float(a.get(name, {}).get("noul", 0.0))
+        # Present is not the same as well-formed. `{"noul": null}`, an
+        # answer of the wrong type, or a renamed field all used to read as
+        # 0.0 -- and on the restricted nouls 0.0 means "not restricted", so
+        # the veto failed OPEN. A question that was asked is parsed
+        # strictly; only a question that was never asked keeps its default.
+        def num(name: str, field: str, hi: float | None = 1.0) -> float:
+            if name not in questions:
+                return 0.0
+            raw = a[name].get(field) if isinstance(a[name], dict) else None
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)) \
+                    or raw != raw or raw < 0 or (hi is not None and raw > hi):
+                raise RuntimeError(
+                    f"Jev answer {name}.{field}={raw!r} is malformed on {slug}"
+                )
+            return float(raw)
 
-        research = a.get("research_would_help", {})
-        otype = a.get("outcome_type", {})
-        aggregation = a.get("stat_aggregation", {})
-        pregame = a.get("pregame_information_edge", {})
-        smtype = a.get("sports_market_type", {})
+        def choice(name: str) -> str:
+            if name not in questions:
+                return "unknown"
+            raw = a[name].get("choice") if isinstance(a[name], dict) else None
+            if not isinstance(raw, str) or not raw:
+                raise RuntimeError(
+                    f"Jev answer {name}.choice={raw!r} is malformed on {slug}"
+                )
+            return raw
+
+        def noul(name: str) -> float:
+            return num(name, "noul")
 
         verdict = TriageVerdict(
             market_slug=slug,
@@ -347,20 +396,24 @@ class JevTriage:
             us_election_or_appointment=noul("us_election_or_appointment"),
             objective_resolution=noul("objective_resolution"),
             self_contained=noul("self_contained"),
-            research_would_help=float(research.get("score", 0.0)),
+            research_would_help=num("research_would_help", "score", hi=None),
             # Noul answers carry no confidence field -- only Choice and
             # Score do. Do not go looking for one on the nouls above.
-            research_confidence=float(research.get("confidence", 0.0)),
-            outcome_type=str(otype.get("choice", "unknown")),
-            outcome_type_confidence=float(otype.get("confidence", 0.0)),
-            stat_aggregation=float(aggregation.get("score", 0.0)),
-            stat_aggregation_confidence=float(aggregation.get("confidence", 0.0)),
-            pregame_information_edge=float(pregame.get("score", 0.0)),
-            pregame_information_edge_confidence=float(
-                pregame.get("confidence", 0.0)
+            research_confidence=num("research_would_help", "confidence"),
+            outcome_type=choice("outcome_type"),
+            outcome_type_confidence=num("outcome_type", "confidence"),
+            stat_aggregation=num("stat_aggregation", "score", hi=None),
+            stat_aggregation_confidence=num("stat_aggregation", "confidence"),
+            pregame_information_edge=num(
+                "pregame_information_edge", "score", hi=None
             ),
-            sports_market_type=str(smtype.get("choice", "unknown")),
-            sports_market_type_confidence=float(smtype.get("confidence", 0.0)),
+            pregame_information_edge_confidence=num(
+                "pregame_information_edge", "confidence"
+            ),
+            sports_market_type=choice("sports_market_type"),
+            sports_market_type_confidence=num(
+                "sports_market_type", "confidence"
+            ),
             latency_ms=latency_ms,
             input_tokens=usage.get("input_tokens", 0),
             output_tokens=usage.get("output_tokens", 0),
@@ -466,7 +519,12 @@ def apply_gate(v: TriageVerdict, gate: GateThresholds) -> TriageVerdict:
     #
     #    min_research_confidence ships at 0.0, so this is inert until a
     #    shadow run shows where the cut belongs.
-    if v.research_confidence < gate.min_research_confidence:
+    #
+    #    General markets only. A sports market is never asked
+    #    research_would_help, so its research_confidence is the schema
+    #    default 0.0 -- not a judgment -- and any threshold above zero
+    #    would veto every sports market while looking like Jev said so.
+    if not v.is_sports and v.research_confidence < gate.min_research_confidence:
         v.escalate = False
         v.gate_score = 0.0
         v.veto_reason = (

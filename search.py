@@ -176,7 +176,23 @@ class AnthropicSearch:
         error object rather than a list. Branch on that before indexing,
         or a rate-limited search raises a TypeError instead of degrading.
         """
+        # The result blocks carry encrypted page content. The only readable
+        # source text in the response is `cited_text` on the answer's
+        # citations -- verbatim quotes, already paid for. Without it a
+        # gatherer is handed headlines and asked for facts.
+        quotes: dict[str, list[str]] = {}
+        for block in body.get("content", []) or []:
+            if not isinstance(block, dict) or block.get("type") != "text":
+                continue
+            for c in block.get("citations") or []:
+                if not isinstance(c, dict):
+                    continue
+                url, text = str(c.get("url") or ""), str(c.get("cited_text") or "")
+                if url and text and text not in quotes.setdefault(url, []):
+                    quotes[url].append(text)
+
         out: list[dict[str, str]] = []
+        uncited: list[dict[str, str]] = []
         for block in body.get("content", []) or []:
             if not isinstance(block, dict):
                 continue
@@ -190,17 +206,18 @@ class AnthropicSearch:
             for r in content or []:
                 if not isinstance(r, dict) or r.get("type") != "web_search_result":
                     continue
-                out.append({
+                url = str(r.get("url") or "")
+                age = str(r.get("page_age") or "")
+                cited = " ... ".join(quotes.get(url, []))[:700]
+                item = {
                     "title": str(r.get("title") or "")[:200],
-                    "url": str(r.get("url") or ""),
-                    # Basic web search returns encrypted page content, not
-                    # a snippet. The readable text is in the model's cited
-                    # answer; page_age is the only plain metadata.
-                    "snippet": str(r.get("page_age") or ""),
-                })
-                if len(out) >= self._max_results:
-                    return out
-        return out
+                    "url": url,
+                    "snippet": f"[{age}] {cited}" if cited and age else cited or age,
+                }
+                (out if cited else uncited).append(item)
+        # Quoted sources first: max_results truncates, and a result with
+        # no readable text is worth less than one with a verbatim quote.
+        return (out + uncited)[: self._max_results]
 
     def report(self) -> str:
         return (f"search: {self.calls} calls, {self.searches} searches, "
