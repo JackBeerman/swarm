@@ -760,3 +760,156 @@ class GateThresholds:
                     "contested_event": 0.20,
                 },
             )
+
+
+# ==========================================================================
+# Fast lane -- a headline arrives; does it move a market we are watching?
+# ==========================================================================
+#
+# The slow lane uses Jev to save money. This uses it for what it is
+# fastest at: reading a piece of text against a fixed set of options, in
+# one ~300 ms request, with no LLM on the path.
+#
+# ONE request per (headline, event). The headline-level checks and every
+# per-market effect question go together -- TypeSafe's speculative fan-out:
+# questions are answered in parallel against one state and output tokens
+# are free, so asking the per-market questions before knowing the headline
+# is relevant costs nothing and saves a round trip. Code reads the
+# per-market answers only when the headline-level ones pass.
+#
+# State: {"headline": {"title", "summary", "source"}, "event": "<title>",
+#         "teams": {"<team>": ["<player> (<pos>)", ...]},   <- LLM-written brief
+#         "markets": [{"question", "outcome"}, ...]}
+#
+# SHADOW ONLY. Nothing here is wired to an order. Every threshold below is
+# a placeholder until fastlane.py --score has enough headlines to set it.
+
+FASTLANE_HEADLINE_QUESTIONS: dict[str, dict[str, Any]] = {
+    "reports_new_fact": {
+        "type": "noul",
+        "instructions": {
+            "question": "Does `headline` report a specific new fact about a team, player, or venue?",
+            "inspect": "`headline.title` and `headline.summary`",
+            "focus": "A thing that happened or was decided, not an opinion about what will happen.",
+        },
+        "criteria": {
+            "true": {
+                "what": "A concrete report: an injury, an inactive or lineup decision, a roster move, a weather change, a score or in-game event",
+                "examples": [
+                    "Puka Nacua ruled out for Monday night with ankle injury",
+                    "Giants inactives: starting left tackle will not play",
+                    "Rams take 14-3 lead on Stafford touchdown pass",
+                ],
+            },
+            "false": {
+                "what": "Previews, predictions, betting picks, rankings, opinion, fantasy advice, or a recap of an older game",
+                "examples": [
+                    "Giants vs. Rams odds, predictions, NFL picks",
+                    "Five things to watch on Monday Night Football",
+                    "Week 3 power rankings",
+                ],
+            },
+        },
+    },
+    "concerns_event": {
+        "type": "noul",
+        "instructions": {
+            "question": "Is `headline` about a team or player taking part in `event`?",
+            "inspect": "`headline.title`, `headline.summary` and `event`",
+        },
+        "criteria": {
+            "true": {"what": "Names one of the teams in `event`, or a player or coach on one of them"},
+            "false": {
+                "what": "About other teams, other leagues, or the sport in general",
+                "not_for": "A headline that names both a team in `event` and other teams counts as true",
+            },
+        },
+    },
+    "headline_political": {
+        "type": "noul",
+        "instructions": {
+            "question": "Is `headline` about politics, government, or a political figure, in any country?",
+            "inspect": "`headline.title` and `headline.summary`",
+        },
+        "criteria": {
+            "true": {"what": "Elections, politicians, legislation, government decisions, diplomacy"},
+            "false": {
+                "what": "No political actor or government decision",
+                "not_for": "Sports terms such as defense, or team names such as Patriots and Commanders",
+            },
+        },
+    },
+}
+
+
+def fastlane_market_questions(i: int) -> dict[str, dict[str, Any]]:
+    """The two per-market questions, pointed at `markets[i]` by path."""
+    m = f"`markets[{i}]`"
+    return {
+        f"effect_{i}": {
+            "type": "choice",
+            "instructions": {
+                "question": f"If what `headline` reports is true, how does it change the chance that {m} resolves YES?",
+                "inspect": (f"`headline.title`, `headline.summary`, `teams`, "
+                            f"`markets[{i}].question` and `markets[{i}].outcome`"),
+                "focus": (
+                    "Judge the direction only. YES means the thing named in the market's "
+                    "`outcome` happens. Use `teams` to find which team a named player is on: "
+                    "losing a player hurts his own team and helps the opponent."
+                ),
+            },
+            "criteria": {
+                "raises": {
+                    "what": "Makes the outcome more likely",
+                    "examples": [
+                        "Opposing starting quarterback ruled out -> this team wins",
+                        "Team scores a touchdown -> total points over the line",
+                    ],
+                },
+                "lowers": {
+                    "what": "Makes the outcome less likely",
+                    "examples": [
+                        "Star receiver ruled out -> his team's total points over the line",
+                        "Heavy rain and wind at kickoff -> total points over the line",
+                    ],
+                },
+                "no_clear_effect": {
+                    "what": "Does not bear on this market, or could push it either way",
+                    "not_for": "A clear injury or score change affecting a team in this market",
+                    "examples": [
+                        "A backup long snapper is inactive",
+                        "News about a player on neither team",
+                    ],
+                },
+            },
+        },
+        f"size_{i}": {
+            "type": "score",
+            "instructions": {
+                "question": f"How much does what `headline` reports matter to {m}?",
+                "inspect": f"`headline.title`, `headline.summary` and `markets[{i}].question`",
+                "focus": "Judge the importance of the fact to this market, not how dramatic the headline sounds.",
+            },
+            "criteria": [
+                {"what": "Irrelevant to this market or routine",
+                 "signals": ["Depth player or practice-squad move", "A different game", "Already widely expected"]},
+                {"what": "A real but partial factor",
+                 "signals": ["A starter who is not the quarterback is out", "A single score early in a game"]},
+                {"what": "A decisive factor for this market",
+                 "signals": ["Starting quarterback ruled out", "A two-score swing late in a game",
+                             "The named player in a player market is inactive"]},
+            ],
+        },
+    }
+
+
+@dataclass(frozen=True)
+class FastLaneThresholds:
+    # PLACEHOLDERS, unmeasured. They decide only which recorded rows are
+    # labelled `acted`, so the scorer can compare "would have fired"
+    # against "would not". Nothing trades on them.
+    min_new_fact: float = 0.60
+    min_concerns_event: float = 0.60
+    max_political: float = 0.12          # same ceiling as max_restricted
+    min_effect_confidence: float = 0.50
+    min_size: float = 1.0                # on the 0-2 Score

@@ -132,6 +132,37 @@ looked like "the model said no". [CLAUDE.md](CLAUDE.md) documents them.
 about the question asked. A Noul of 0.90 on `objective_resolution` is a claim
 about the market's wording, not about the bet.
 
+## The fast lane: Jev for speed, not only for savings
+
+The pipeline above uses Jev to save money. A 300 ms judgment followed by a
+minute of LLM research is still a slow pipeline, so
+[fastlane.py](fastlane.py) inverts it:
+
+- **Ahead of time, slow:** an LLM with web search writes a *brief* per event
+  (who plays for which team).
+- **At the moment of news, fast:** a headline arrives from an RSS feed and
+  ONE Jev request answers, against the brief, whether it is a new fact,
+  whether it concerns the event, and for each watched market which way it
+  pushes YES and how much. Median 180-350 ms for 15 questions. No LLM on
+  the path.
+
+It places no orders. It records the quote at the moment of the headline and
+again at +1, +5 and +30 minutes, so the question is not "did the bet win"
+(days) but "did the price move the way Jev said" (minutes). It also records
+feed lag, because if RSS runs minutes behind the book no model speed helps.
+
+Why the brief matters, measured with
+[tools/probe_fastlane.py](tools/probe_fastlane.py): for the headline
+"inactives: Puka Nacua ruled out", which names no team, Jev without a brief
+said it *raises* the Rams' chance of covering. Nacua is a Ram. With the brief
+it stays out of that market and correctly lowers the Rams' team total. Jev
+reads what it is given; it does not know rosters.
+
+```bash
+python fastlane.py --tags nfl --start-window 6 --minutes 240
+python fastlane.py --score
+```
+
 ## What we have measured
 
 Be careful with all of it.
@@ -163,10 +194,11 @@ markets where research beats the price is the open question.
 | [risk_engine.py](risk_engine.py) | NLV, cost ledger, kill switch. |
 | [search.py](search.py) | Web search for Tier 2 (Anthropic server tool). |
 | [traces.py](traces.py) | What Tiers 2/3 believed, kept so it can be scored. |
+| [fastlane.py](fastlane.py) | **Shadow-only.** Jev reads headlines in ~200 ms against an LLM-written brief; prices are followed for 30 min. |
 | [inplay.py](inplay.py) | Websocket feed and in-game experiments. |
 | [config.py](config.py) | Env loading, fail-fast validation. |
 | [tools/](tools/) | `probe_restricted.py`, `survey_tags.py`, `by_category.py`. |
-| [tests/](tests/) | 175 tests. No network, no keys; httpx is mocked at the transport layer. |
+| [tests/](tests/) | 190 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
 | [docs/PROPOSALS.md](docs/PROPOSALS.md) | Question changes awaiting a human decision. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, where changes go, and what needs evidence. |
@@ -176,7 +208,7 @@ markets where research beats the price is the open question.
 ```bash
 make setup                 # venv, deps, .env from the template
 # put your own keys in .env; it is gitignored. Never commit or paste it.
-make check                 # ruff + 175 tests, no network, no keys needed
+make check                 # ruff + 190 tests, no network, no keys needed
 python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 
