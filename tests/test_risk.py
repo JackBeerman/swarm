@@ -6,8 +6,6 @@ unrecoverable, so these lean on the failure modes rather than happy paths.
 from __future__ import annotations
 
 import os
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -19,7 +17,6 @@ from risk_engine import (  # noqa: E402
     KillSwitch,
     RiskEngine,
     RiskLimits,
-    RiskSnapshot,
 )
 from schemas import StageCost  # noqa: E402
 

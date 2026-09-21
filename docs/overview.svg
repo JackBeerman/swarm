@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 780" width="960" height="780" role="img" aria-labelledby="t d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="t">swarm pipeline overview</title>
+  <desc id="d">A funnel. About ten thousand open markets pass a free structural filter in code, then Jev triage at about $0.00008 per market, then three Claude Haiku gatherers with web search, then Claude Opus synthesis, then position sizing in code. Only daemon.py can place an order.</desc>
+  <style>
+    .bg{fill:#ffffff}.ink{fill:#1f2328}.mute{fill:#59636e}.line{stroke:#d1d9e0}
+    .box{fill:#f6f8fa;stroke:#d1d9e0}.code{fill:#eef1f4;stroke:#c8d1da}
+    .jev{fill:#dafbe1;stroke:#1a7f37}.jevink{fill:#116329}
+    .llm{fill:#ddf4ff;stroke:#0969da}.llmink{fill:#0550ae}
+    .chip{fill:#ffffff;stroke:#1a7f37}.arrow{stroke:#8c959f;fill:none}.ah{fill:#8c959f}
+    .warn{fill:#fff8c5;stroke:#9a6700}.warnink{fill:#7d4e00}
+    .bar1{fill:#1a7f37}.bar2{fill:#0969da}
+    @media (prefers-color-scheme: dark){
+      .bg{fill:#0d1117}.ink{fill:#f0f6fc}.mute{fill:#9198a1}.line{stroke:#3d444d}
+      .box{fill:#151b23;stroke:#3d444d}.code{fill:#1c232c;stroke:#3d444d}
+      .jev{fill:#12261e;stroke:#3fb950}.jevink{fill:#56d364}
+      .llm{fill:#121d2f;stroke:#4493f8}.llmink{fill:#79c0ff}
+      .chip{fill:#0d1117;stroke:#3fb950}.arrow{stroke:#656c76}.ah{fill:#656c76}
+      .warn{fill:#2a2111;stroke:#d29922}.warnink{fill:#e3b341}
+      .bar1{fill:#3fb950}.bar2{fill:#4493f8}
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+
+  <rect class="bg" width="960" height="780" rx="12"/>
+
+  <text class="ink" x="40" y="46" font-size="22" font-weight="700">Where Jev sits</text>
+  <text class="mute" x="40" y="70" font-size="14">A cheap, fast judgment tier in front of expensive research. The gate is where a $100 treasury is won or lost.</text>
+
+  <!-- column headers -->
+  <text class="mute" x="700" y="106" font-size="11" font-weight="600" letter-spacing="1">COST PER MARKET</text>
+  <text class="mute" x="850" y="106" font-size="11" font-weight="600" letter-spacing="1">WHO DECIDES</text>
+
+  <!-- 1. universe -->
+  <rect class="box" x="40" y="120" width="620" height="52" rx="8"/>
+  <text class="ink" x="60" y="143" font-size="15" font-weight="600">~10,000 open markets</text>
+  <text class="mute" x="60" y="161" font-size="12.5">Polymarket US: sports, weather, crypto, tech, music, entertainment</text>
+  <text class="mute" x="700" y="151" font-size="13">—</text>
+
+  <path class="arrow" d="M350 172V190" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- 2. structural -->
+  <rect class="code" x="70" y="192" width="560" height="58" rx="8"/>
+  <text class="ink" x="90" y="216" font-size="15" font-weight="600">Structural filter</text>
+  <text class="mute" x="90" y="235" font-size="12.5">spread · depth · volume · event clock · game state · political tags</text>
+  <text class="ink" x="700" y="218" font-size="14" font-weight="600">free</text>
+  <text class="mute" x="700" y="235" font-size="12">arithmetic, no model</text>
+  <text class="mute" x="850" y="226" font-size="13">code</text>
+
+  <path class="arrow" d="M350 250V268" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- 3. JEV -->
+  <rect class="jev" x="100" y="270" width="500" height="150" rx="10" stroke-width="2"/>
+  <text class="jevink" x="120" y="296" font-size="11" font-weight="700" letter-spacing="1.2">TIER 1</text>
+  <text class="ink" x="120" y="319" font-size="18" font-weight="700">Jev triage</text>
+  <text class="mute" x="222" y="319" font-size="13">jev-1.13.0 · System One, returns probabilities not text</text>
+  <text class="ink" x="120" y="342" font-size="13">7–8 typed questions in one request, about what kind of market this is.</text>
+  <text class="ink" x="120" y="360" font-size="13">Sees five text fields. No prices, no news.</text>
+
+  <g font-size="12" font-weight="600">
+    <rect class="chip" x="120" y="376" width="128" height="28" rx="14"/><text class="jevink" x="184" y="394" text-anchor="middle">4 Noul · veto on max</text>
+    <rect class="chip" x="256" y="376" width="98" height="28" rx="14"/><text class="jevink" x="305" y="394" text-anchor="middle">Noul · floors</text>
+    <rect class="chip" x="362" y="376" width="104" height="28" rx="14"/><text class="jevink" x="414" y="394" text-anchor="middle">Score · degree</text>
+    <rect class="chip" x="474" y="376" width="106" height="28" rx="14"/><text class="jevink" x="527" y="394" text-anchor="middle">Choice · type</text>
+  </g>
+
+  <text class="ink" x="700" y="326" font-size="16" font-weight="700">$0.00008</text>
+  <text class="mute" x="700" y="345" font-size="12">~300 ms</text>
+  <text class="mute" x="700" y="362" font-size="12">every survivor</text>
+  <text class="jevink" x="850" y="334" font-size="13" font-weight="600">Jev judges,</text>
+  <text class="mute" x="850" y="352" font-size="13">code gates</text>
+
+  <path class="arrow" d="M350 420V446" stroke-width="1.5" marker-end="url(#a)"/>
+  <text class="mute" x="362" y="438" font-size="11.5">veto → floors → one composite score → one threshold</text>
+
+  <!-- 4. tier 2 -->
+  <rect class="llm" x="150" y="448" width="400" height="58" rx="8"/>
+  <text class="llmink" x="170" y="470" font-size="11" font-weight="700" letter-spacing="1.2">TIER 2</text>
+  <text class="ink" x="222" y="471" font-size="15" font-weight="600">3× Claude Haiku 4.5 + web search</text>
+  <text class="mute" x="170" y="491" font-size="12.5">sleuth · historian · red team, one search each</text>
+  <text class="ink" x="700" y="474" font-size="14" font-weight="600">~$0.10</text>
+  <text class="mute" x="700" y="491" font-size="12">only past the gate</text>
+  <text class="mute" x="850" y="482" font-size="13">LLM gathers</text>
+
+  <path class="arrow" d="M350 506V524" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- 5. tier 3 -->
+  <rect class="llm" x="190" y="526" width="320" height="58" rx="8"/>
+  <text class="llmink" x="210" y="548" font-size="11" font-weight="700" letter-spacing="1.2">TIER 3</text>
+  <text class="ink" x="262" y="549" font-size="15" font-weight="600">Claude Opus 5 synthesis</text>
+  <text class="mute" x="210" y="569" font-size="12.5">a probability and a confidence. Never a size.</text>
+  <text class="ink" x="700" y="552" font-size="14" font-weight="600">~$0.05</text>
+  <text class="mute" x="850" y="560" font-size="13">LLM estimates</text>
+
+  <path class="arrow" d="M350 584V602" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- 6. sizing -->
+  <rect class="code" x="220" y="604" width="260" height="58" rx="8"/>
+  <text class="ink" x="240" y="628" font-size="15" font-weight="600">Sizing, then daemon.py</text>
+  <text class="mute" x="240" y="647" font-size="12.5">fractional Kelly · caps · min edge</text>
+  <text class="ink" x="700" y="630" font-size="14" font-weight="600">free</text>
+  <text class="mute" x="700" y="647" font-size="12">the only path to an order</text>
+  <text class="mute" x="850" y="638" font-size="13">code</text>
+
+  <!-- ratio strip -->
+  <line class="line" x1="40" y1="690" x2="920" y2="690" stroke-width="1"/>
+  <text class="ink" x="40" y="718" font-size="13" font-weight="600">Why the gate matters</text>
+  <text class="mute" x="40" y="738" font-size="12.5">One full evaluation costs about as much as 1,500 Jev calls.</text>
+  <text class="mute" x="40" y="756" font-size="12.5">$100 buys ~1.2 million triage calls, or ~700 full evaluations.</text>
+
+  <text class="mute" x="470" y="722" font-size="12" text-anchor="end">Jev call</text>
+  <rect class="bar1" x="480" y="712" width="3" height="12" rx="1"/>
+  <text class="mute" x="492" y="722" font-size="12">$0.00008</text>
+  <text class="mute" x="470" y="748" font-size="12" text-anchor="end">full evaluation</text>
+  <rect class="bar2" x="480" y="738" width="380" height="12" rx="3"/>
+  <text class="mute" x="868" y="748" font-size="12">~$0.12</text>
+</svg>

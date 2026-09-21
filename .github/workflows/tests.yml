@@ -1,0 +1,23 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# No secrets are used or needed: every test mocks the network boundary.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: ruff check .
+      - run: pytest -q

@@ -383,7 +383,7 @@ async def test_quote_fetcher_paces_globally_not_just_per_task():
     pm = _FakePM()
     q = QuoteFetcher(pm, concurrency=4, min_interval=0.05)
     await asyncio.gather(*(q.bbo(f"m{i}") for i in range(4)))
-    gaps = [b - a for a, b in zip(pm.markets.starts, pm.markets.starts[1:])]
+    gaps = [b - a for a, b in zip(pm.markets.starts, pm.markets.starts[1:], strict=False)]
     assert all(g >= 0.04 for g in gaps), f"requests not paced: {gaps}"
 
 

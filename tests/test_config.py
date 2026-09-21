@@ -1,6 +1,5 @@
 """Config tests -- mostly about refusing to run in unsafe states."""
 from __future__ import annotations
-import os
 import pytest
 from config import Config, ConfigError
 

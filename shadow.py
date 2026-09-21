@@ -773,7 +773,7 @@ def sweep(conn: sqlite3.Connection, field: str) -> None:
               f"{field!r} and sweeping min_gate_score.\n")
 
     print(f"\n  sweeping min_gate_score   (n={n})")
-    print(f"  target escalation band: 3-6%\n")
+    print("  target escalation band: 3-6%\n")
     print(f"    {'threshold':>10}  {'escalation':>11}  {'count':>6}   "
           f"{'est. $ per 1k markets':>21}")
 

@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 log = logging.getLogger("config")
 

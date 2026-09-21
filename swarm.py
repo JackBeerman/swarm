@@ -35,7 +35,6 @@ from pydantic import ValidationError
 
 from adapters import derive_notionals, game_state
 from questions import (
-    ALL_TIER1_QUESTIONS,
     GateThresholds,
     StructuralLimits,
     is_sports_market,

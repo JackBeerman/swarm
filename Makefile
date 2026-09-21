@@ -1,4 +1,4 @@
-.PHONY: setup test lint check shadow analyze sweep paper clean
+.PHONY: setup test lint check shadow backfill analyze sweep score calibrate probe paper clean
 
 VENV := .venv
 
@@ -26,6 +26,18 @@ check: lint test
 
 shadow:                ## collect triage verdicts (safe, no orders)
 	$(PY) shadow.py --collect --limit 200
+
+backfill:              ## fill resolved outcomes (settlement lands in minutes)
+	$(PY) shadow.py --backfill
+
+score:
+	$(PY) shadow.py --score
+
+calibrate:             ## price vs frequency, counted by event
+	$(PY) shadow.py --calibrate
+
+probe:                 ## re-check the restricted veto against live Jev (~$0.001)
+	$(PY) tools/probe_restricted.py
 
 analyze:
 	$(PY) shadow.py --analyze

@@ -21,27 +21,7 @@ Everything else has run in shadow or paper mode. See
 
 ## The shape
 
-```text
- ~10,000 open markets
-        |
-        |  structural_filter()      code, free
-        |  spread, depth, volume, clocks, political tags
-        v
- Tier 1  Jev (jev-1.13.0)           ~$0.00008, ~300 ms      every survivor
-        |  7-8 typed questions in ONE request
-        |  restricted veto -> floors -> composite gate score
-        v
- Tier 2  3x Claude Haiku 4.5        ~$0.10 with web search   ~3-6% of markets
-        |  sleuth / historian / red team, one search each
-        v
- Tier 3  Claude Opus 5              ~$0.05
-        |  returns a probability and a confidence. Never a size.
-        v
- size_from_signal()                 code: fractional Kelly, caps, min edge
-        |
-        v
- daemon.py                          the only file that can place an order
-```
+![Pipeline overview: a free structural filter, then Jev triage, then Claude research tiers, then sizing in code](docs/overview.svg)
 
 The economic argument is the ratio between tiers. A full evaluation costs
 roughly 1,500x a Jev call. $100 buys about 1.2 million triage calls or about
@@ -141,7 +121,7 @@ could not see "Secretary of Defense" sitting in the outcome leg.
 **Question design is the whole job, and it is hard.** Of the sports block's
 three signals, two are near-constant on real data (sd 0.10 on a 0-2 scale;
 sd 0.02 on a 0-1 scale). A question that does not vary is a constant with a
-weight on it. [PROPOSALS.md](PROPOSALS.md) has the audit and proposed rewrites.
+weight on it. [PROPOSALS.md](docs/PROPOSALS.md) has the audit and proposed rewrites.
 
 **Bugs here are silent.** The recurring failure in this repo is a plausible
 0.0: three ANDed thresholds whose joint pass rate was zero, factors multiplied
@@ -186,15 +166,17 @@ markets where research beats the price is the open question.
 | [inplay.py](inplay.py) | Websocket feed and in-game experiments. |
 | [config.py](config.py) | Env loading, fail-fast validation. |
 | [tools/](tools/) | `probe_restricted.py`, `survey_tags.py`, `by_category.py`. |
+| [tests/](tests/) | 169 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
-| [PROPOSALS.md](PROPOSALS.md) | Question changes awaiting a human decision. |
+| [docs/PROPOSALS.md](docs/PROPOSALS.md) | Question changes awaiting a human decision. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, where changes go, and what needs evidence. |
 
 ## Setup
 
 ```bash
 make setup                 # venv, deps, .env from the template
 # put your own keys in .env; it is gitignored. Never commit or paste it.
-make test                  # 169 tests, no network, no keys needed
+make check                 # ruff + 169 tests, no network, no keys needed
 python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 
@@ -277,8 +259,7 @@ Enforced in code and tests; see [CLAUDE.md](CLAUDE.md) for the full list.
 
 ## Contributing
 
-Changes to question wording, thresholds or structural limits are proposals:
-open a PR that edits [PROPOSALS.md](PROPOSALS.md) or explains the evidence,
-and re-measure floors on a fresh shadow run, since any wording change
-recalibrates its thresholds. A test fixture is not evidence about the wire
-format; a probe against the live API is.
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: question wording,
+thresholds and structural limits are proposals backed by a measurement, and
+a test fixture is not evidence about the wire format; a probe against the
+live API is.

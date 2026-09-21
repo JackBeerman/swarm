@@ -148,11 +148,11 @@ def test_event_key_groups_markets_that_resolve_together():
 def test_calibrate_reports_events_not_just_markets(tmp_path, capsys):
     path = str(tmp_path / "cal.db")
     conn = shadow.connect(path)
-    for i, (slug, outcome) in enumerate([
+    for slug, outcome in (
         ("tsc-nfl-min-chi-2026-09-20-total-21pt5", "0"),
         ("tsc-nfl-min-chi-2026-09-20-total-24pt5", "0"),
         ("tsc-nfl-car-atl-2026-09-20-total-26pt5", "1"),
-    ]):
+    ):
         conn.execute(
             "INSERT INTO verdicts (seen_at, market_slug, bid, ask, escalate, "
             "resolved_outcome) VALUES (?,?,?,?,?,?)",
