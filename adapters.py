@@ -191,9 +191,10 @@ def normalize_market(
         "event_at": (ev.get("startTime") or market.get("gameStartTime")
                      or market.get("startDate")),
         "starts_at": ev.get("startTime") or market.get("startDate"),
-        # Live game state. Present on game events only, and absent from
-        # season futures. `period` is the reliable one -- it is on every
-        # sports event; score/elapsed populate once play begins.
+        # Live game state. score/elapsed populate once play begins.
+        # `period` is NOT sports-only: verified 2026-09-21, weather and
+        # gas-price events carry period="NS" too, so its presence cannot
+        # route a market. `category` and `marketType` can.
         #   NS = not started, FT = full time, otherwise in play
         #   ("Q4", "1H", "Bot 5th", "34'")
         "period": ev.get("period"),
@@ -201,6 +202,11 @@ def normalize_market(
         "elapsed": ev.get("elapsed"),
         "is_live": bool(ev.get("live")),
         "tags": tags,
+        # The exchange's own taxonomy ("climate", "macro", ...) and the
+        # market kind ("futures" on everything that is not a game prop).
+        "category": ev.get("category") or market.get("category"),
+        "market_type": market.get("marketType"),
+        "series_slug": ev.get("seriesSlug"),
         # Not on the wire. Filled by derive_notionals() from the quote.
         "volume_usd": None,
         "liquidity_usd": None,

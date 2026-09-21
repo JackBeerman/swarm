@@ -162,3 +162,16 @@ def test_calibrate_reports_events_not_just_markets(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "3 settled markets (2 events)" in out
     assert "0.92-0.96" in out
+
+
+def test_store_keeps_the_exchange_event_and_taxonomy(db):
+    """
+    event_slug was computed by normalize_market and then dropped, so
+    calibrate() rebuilt it with a sports-only regex. Off-sports slugs
+    (`tc-temp-nychigh-...`, `aaagaspc-usgas-...`) do not fit that regex.
+    """
+    m = {**MARKET, "event_slug": "temp-nychigh-2026-09-21",
+         "category": "climate", "market_type": "futures"}
+    shadow.store(db, _sports_verdict("tc-temp-nychigh-2026-09-21-gte66lt67f"), m, BBO)
+    r = db.execute("SELECT event_slug, category, market_type FROM verdicts").fetchone()
+    assert tuple(r) == ("temp-nychigh-2026-09-21", "climate", "futures")

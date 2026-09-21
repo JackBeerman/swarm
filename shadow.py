@@ -134,6 +134,9 @@ FIELDS = [
 #: EXISTS does not alter an existing table, so a database from an earlier
 #: run keeps the old shape and every insert fails on the new columns.
 _MIGRATIONS = {
+    "event_slug": "TEXT",
+    "category": "TEXT",
+    "market_type": "TEXT",
     "politics_or_government": "REAL",
     "is_sports": "INTEGER",
     "stat_aggregation": "REAL",
@@ -210,9 +213,9 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             input_tokens, output_tokens,
             liquidity_usd, bid_shares, ask_shares, model, outcome,
             event_title, period, hours_to_event, description, tags,
-            politics_or_government
+            politics_or_government, event_slug, category, market_type
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                  ?,?,?,?,?,?,?,?,?,?,?)""",
+                  ?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             datetime.now(timezone.utc).isoformat(),
             v.market_slug,
@@ -252,6 +255,9 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             (market.get("description") or "")[:1500],
             json.dumps(market.get("tags") or []),
             v.politics_or_government,
+            market.get("event_slug"),
+            market.get("category"),
+            market.get("market_type"),
         ),
     )
     conn.commit()
@@ -505,6 +511,11 @@ def _event_key(slug: str) -> str:
     return m.group(1) if m else (slug or "").rsplit("-", 2)[0]
 
 
+def _row_event(r: sqlite3.Row) -> str:
+    """The exchange's event slug when stored; the slug regex for old rows."""
+    return r["event_slug"] or _event_key(r["market_slug"])
+
+
 def calibrate(db: str = DB_PATH, max_spread: float = 0.10) -> None:
     """
     The most general thing the betting slips can teach: when the market
@@ -523,7 +534,7 @@ def calibrate(db: str = DB_PATH, max_spread: float = 0.10) -> None:
     """
     with closing(connect(db)) as conn:
         rows = conn.execute(
-            """SELECT market_slug, bid, ask, resolved_outcome
+            """SELECT market_slug, bid, ask, resolved_outcome, event_slug
                FROM verdicts
                WHERE resolved_outcome IS NOT NULL
                  AND bid IS NOT NULL AND ask IS NOT NULL
@@ -532,7 +543,7 @@ def calibrate(db: str = DB_PATH, max_spread: float = 0.10) -> None:
     rows = [r for r in rows if (r["ask"] - r["bid"]) <= max_spread]
     print("=" * 78)
     print(f"  calibration over {len(rows)} settled markets "
-          f"({len({_event_key(r['market_slug']) for r in rows})} events), "
+          f"({len({_row_event(r) for r in rows})} events), "
           f"spread <= {max_spread}")
     print("=" * 78)
     if not rows:
@@ -547,7 +558,7 @@ def calibrate(db: str = DB_PATH, max_spread: float = 0.10) -> None:
         if not rs:
             continue
         n = len(rs)
-        ev = len({_event_key(r["market_slug"]) for r in rs})
+        ev = len({_row_event(r) for r in rs})
         priced = sum(r["ask"] for r in rs) / n
         won = sum(r["resolved_outcome"] == "1" for r in rs) / n
         yes = sum((1 - r["ask"]) if r["resolved_outcome"] == "1" else -r["ask"]
