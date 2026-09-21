@@ -43,6 +43,7 @@ from config import Config, ConfigError, setup_logging
 from questions import GateThresholds, StructuralLimits
 from risk_engine import CostLedger, KillSwitch, RiskEngine, RiskLimits
 from search import default_search
+import traces
 from schemas import PipelineResult
 from swarm import JevTriage, PortfolioLock, RiskConfig, Swarm
 
@@ -95,6 +96,7 @@ class Daemon:
         self.tracker = PriceTracker()
         self._stop = asyncio.Event()
         self._last_seen: dict[str, float] = {}
+        self._traces: Any = None        # opened on first escalation
         self.stats = {"triaged": 0, "escalated": 0, "orders": 0, "loops": 0}
 
     def request_stop(self, *_: Any) -> None:
@@ -276,6 +278,21 @@ class Daemon:
             self.stats["triaged"] += 1
             if result.triage and result.triage.escalate:
                 self.stats["escalated"] += 1
+                # Keep what the paid tiers believed. Before this, a cycle
+                # remembered only its cost -- facts, Tier 3's probability
+                # and the sized order were all discarded, so the research
+                # could never be scored against the outcome.
+                if self._traces is None:
+                    self._traces = traces.connect()
+                traces.record(self._traces, self.cfg.mode, result, norm, bbo)
+                sig = result.signal
+                log.info("EVAL %-40s gate=%.2f  tier3=%s  order=%s  cost=$%.3f%s",
+                         slug[:40], result.triage.gate_score,
+                         f"{sig.side.value}@{sig.probability:.2f}" if sig else "none",
+                         f"{result.order.quantity}@{result.order.limit_price:.3f}"
+                         if result.order else "none",
+                         result.total_cost_usd,
+                         f"  [{result.halted_at}]" if result.halted_at else "")
             if result.order:
                 await self._place(pm, result, swarm.portfolio)
 
