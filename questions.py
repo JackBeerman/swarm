@@ -81,6 +81,35 @@ class StructuralLimits:
     max_price: float = 0.95
 
 
+POLITICAL_TAG_WORDS = (
+    "politic", "election", "geopolitic", "government", "congress", "senate",
+    "president", "parliament", "white-house", "supreme-court", "legislation",
+    "diplomacy", "sanction", "war", "military", "trump", "biden",
+)
+
+
+def political_tag(tags: Any) -> str | None:
+    """
+    First tag that marks a market as political, else None.
+
+    Substring match on purpose: the wire's tag vocabulary has never been
+    recorded (shadow.db `tags` is NULL on every row so far), so an exact
+    set would miss `us-politics` or `elections-2028`. A false positive
+    costs one skipped market; a false negative breaks Jack's rule.
+    """
+    for t in tags or []:
+        slug = str(t.get("slug") or t.get("label") or "") if isinstance(t, dict) else str(t)
+        slug = slug.lower().replace(" ", "-")
+        for w in POLITICAL_TAG_WORDS:
+            # "war" must not match "warriors" or "award".
+            if w == "war":
+                if slug == "war" or slug.startswith("war-") or slug.endswith("-war"):
+                    return slug
+            elif w in slug:
+                return slug
+    return None
+
+
 def structural_filter(
     state: dict[str, Any], limits: StructuralLimits = StructuralLimits()
 ) -> str | None:
@@ -92,6 +121,13 @@ def structural_filter(
     untradeable regardless of how interesting it is, and that judgment
     costs zero.
     """
+    # The exchange's own label. Deterministic, so it is code and not a
+    # question; the politics_or_government Noul is the second layer, for
+    # political markets filed under some other tag.
+    banned = political_tag(state.get("tags"))
+    if banned:
+        return f"political_tag={banned}"
+
     bid, ask = state.get("best_bid"), state.get("best_ask")
     if bid is None or ask is None:
         return "no_quote"
@@ -177,7 +213,7 @@ RESTRICTED_QUESTIONS: dict[str, dict[str, Any]] = {
                 "Does resolution depend on a decision, action, or "
                 "announcement by the US federal government?"
             ),
-            "inspect": "`question` and `description`",
+            "inspect": "`question`, `outcome`, `event`, `description` and `tags`",
             "focus": (
                 "Federal agencies, regulators, Congress, the White House, "
                 "or federal courts deciding the outcome."
@@ -209,7 +245,7 @@ RESTRICTED_QUESTIONS: dict[str, dict[str, Any]] = {
                 "Does this market concern defense, the military, "
                 "intelligence, or an armed conflict?"
             ),
-            "inspect": "`question`, `description` and `tags`",
+            "inspect": "`question`, `outcome`, `event`, `description` and `tags`",
             "focus": (
                 "Armed forces of any nation, defense procurement or budgets, "
                 "intelligence services, active or threatened hostilities."
@@ -237,7 +273,7 @@ RESTRICTED_QUESTIONS: dict[str, dict[str, Any]] = {
                 "Does resolution depend on a US election, nomination, "
                 "confirmation, or officeholder's tenure?"
             ),
-            "inspect": "`question` and `description`",
+            "inspect": "`question`, `outcome`, `event`, `description` and `tags`",
         },
         "criteria": {
             "true": {
@@ -251,6 +287,57 @@ RESTRICTED_QUESTIONS: dict[str, dict[str, Any]] = {
                 "what": "No US election or appointment dimension",
                 "not_for": "Elections in other countries",
                 "examples": ["Will the UK call a snap election?"],
+            },
+        },
+    },
+    # Jack's instruction, 2026-09-21: no politics on Polymarket, at all.
+    # Broader than the three above on purpose -- any country, any level,
+    # and political figures as subjects. The question above still says
+    # foreign elections are "false" for IT; this one catches them.
+    "politics_or_government": {
+        "type": "noul",
+        "instructions": {
+            "question": (
+                "Is this market about politics, government, or a political "
+                "figure, in any country?"
+            ),
+            "inspect": "`question`, `outcome`, `event`, `description` and `tags`",
+            "focus": (
+                "Elections, parties, politicians, heads of state, "
+                "legislation, government policy, courts ruling on political "
+                "matters, referendums, diplomacy, sanctions, and relations "
+                "between countries. A politician named in `outcome` counts "
+                "even when `question` looks neutral."
+            ),
+        },
+        "criteria": {
+            "true": {
+                "what": (
+                    "A political actor, political process, or government "
+                    "decision is the subject or decides the result"
+                ),
+                "examples": [
+                    "Will the UK call a snap election?",
+                    "Who will win the French presidential election?",
+                    "Will the Prime Minister resign by March?",
+                    "What will the President say during the address?",
+                    "Will the bill pass the Senate?",
+                    "Will country X impose sanctions on country Y?",
+                    "TIME Person of the Year, outcome: a sitting head of state",
+                ],
+            },
+            "false": {
+                "what": "No political actor, process, or government decision",
+                "not_for": (
+                    "Sports, entertainment, company results, crypto prices, "
+                    "or weather that merely take place in some country"
+                ),
+                "examples": [
+                    "Total points over 47.5",
+                    "Will Bitcoin close above $120k?",
+                    "Will Film X win Best Picture?",
+                    "Will Tesla deliver 500k vehicles this quarter?",
+                ],
             },
         },
     },

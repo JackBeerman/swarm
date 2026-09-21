@@ -52,6 +52,7 @@ def jev_body(**overrides):
         "federal_policy_outcome": {"type": "noul", "noul": 0.04},
         "defense_or_military": {"type": "noul", "noul": 0.02},
         "us_election_or_appointment": {"type": "noul", "noul": 0.03},
+        "politics_or_government": {"type": "noul", "noul": 0.02},
         "objective_resolution": {"type": "noul", "noul": 0.88},
         "self_contained": {"type": "noul", "noul": 0.81},
         "research_would_help": {
@@ -936,6 +937,7 @@ def sports_jev_body(**overrides):
         "federal_policy_outcome": {"type": "noul", "noul": 0.01},
         "defense_or_military": {"type": "noul", "noul": 0.01},
         "us_election_or_appointment": {"type": "noul", "noul": 0.01},
+        "politics_or_government": {"type": "noul", "noul": 0.01},
         "objective_resolution": {"type": "noul", "noul": 0.95},
         "stat_aggregation": {
             "type": "score", "score": 1.8, "confidence": 0.82,
@@ -1124,3 +1126,61 @@ async def test_jev_retries_5xx_and_survives_a_junk_retry_after(monkeypatch):
     v = await jev.evaluate(MARKET, BBO)
     await jev.aclose()
     assert route.call_count == 2 and v.model == "jev-1.13.0"
+
+
+# --- no politics, at all (Jack, 2026-09-21) -------------------------------
+
+@respx.mock
+async def test_politics_noul_vetoes_even_when_the_us_questions_pass():
+    """
+    A foreign election scores ~0 on the three US-scoped questions, and
+    us_election_or_appointment even lists it as a `false` example. The
+    fourth question is what stops it.
+    """
+    respx.post("https://api.typesafe.ai/v1/systemone").mock(
+        return_value=httpx.Response(
+            200, json=jev_body(politics_or_government=0.97))
+    )
+    jev = sw.JevTriage(api_key="k")
+    v = await jev.evaluate(MARKET, BBO)
+    await jev.aclose()
+    assert v.escalate is False
+    assert v.veto_reason.startswith("restricted:politics_or_government")
+
+
+@respx.mock
+async def test_political_tag_is_rejected_in_code_before_jev_is_called():
+    route = respx.post("https://api.typesafe.ai/v1/systemone").mock(
+        return_value=httpx.Response(200, json=jev_body())
+    )
+    jev = sw.JevTriage(api_key="k")
+    v = await jev.evaluate({**MARKET, "tags": ["us-politics", "economics"]}, BBO)
+    await jev.aclose()
+    assert route.call_count == 0
+    assert v.structural_reject == "political_tag=us-politics"
+
+
+async def test_political_tag_matching():
+    from questions import political_tag
+    assert political_tag(["Elections 2028"]) == "elections-2028"
+    assert political_tag([{"slug": "geopolitics", "label": "Geopolitics"}])
+    assert political_tag(["ukraine-war"]) == "ukraine-war"
+    # Sports and awards must not trip the "war" rule.
+    assert political_tag(["nba", "warriors", "awards", "nfl", "sports"]) is None
+    assert political_tag(None) is None
+
+
+async def test_every_restricted_question_reads_the_outcome_leg():
+    """
+    `question` is the event ("Who leaves first?"); the restricted content
+    can sit entirely in `outcome` ("Secretary of Defense").
+    """
+    from questions import RESTRICTED_QUESTIONS
+    assert "politics_or_government" in RESTRICTED_QUESTIONS
+    for name, q in RESTRICTED_QUESTIONS.items():
+        assert "`outcome`" in q["instructions"]["inspect"], name
+
+
+async def test_politics_is_not_sampled_by_default():
+    from adapters import DEFAULT_TAG_MIX
+    assert "politics" not in DEFAULT_TAG_MIX

@@ -18,9 +18,10 @@ that matters.
   fraction.** Models return probability + confidence. `size_from_signal()`
   computes size in code. This is deliberate and not negotiable.
 - **Never widen `max_restricted` or remove the restricted-domain veto.**
-  A standing operator constraint: markets touching federal policy,
-  defense, or US elections are off-limits regardless of edge. The veto is
-  on the **max** of the three questions, never the mean.
+  A standing operator constraint: **no politics of any kind, any
+  country**, plus federal policy and defense, regardless of edge. Two
+  layers: `political_tag()` in code, then the **max** (never the mean) of
+  the four restricted Nouls. Every one must `inspect` the `outcome` leg.
 - **Never default `SWARM_MODE` to anything but `shadow`.**
 - **Never make the kill switch exit 0** or auto-clear the `.halted`
   sentinel. A human deletes it. That manual step is the point.

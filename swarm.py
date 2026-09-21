@@ -394,6 +394,7 @@ class JevTriage:
             federal_policy_outcome=noul("federal_policy_outcome"),
             defense_or_military=noul("defense_or_military"),
             us_election_or_appointment=noul("us_election_or_appointment"),
+            politics_or_government=noul("politics_or_government"),
             objective_resolution=noul("objective_resolution"),
             self_contained=noul("self_contained"),
             research_would_help=num("research_would_help", "score", hi=None),
@@ -480,6 +481,7 @@ def apply_gate(v: TriageVerdict, gate: GateThresholds) -> TriageVerdict:
             ("federal_policy_outcome", v.federal_policy_outcome),
             ("defense_or_military", v.defense_or_military),
             ("us_election_or_appointment", v.us_election_or_appointment),
+            ("politics_or_government", v.politics_or_government),
             key=lambda kv: kv[1],
         )
         v.escalate = False

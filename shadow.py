@@ -122,6 +122,7 @@ FIELDS = [
     "federal_policy_outcome",
     "defense_or_military",
     "us_election_or_appointment",
+    "politics_or_government",
     "objective_resolution",
     "self_contained",
     "research_would_help",
@@ -133,6 +134,7 @@ FIELDS = [
 #: EXISTS does not alter an existing table, so a database from an earlier
 #: run keeps the old shape and every insert fails on the new columns.
 _MIGRATIONS = {
+    "politics_or_government": "REAL",
     "is_sports": "INTEGER",
     "stat_aggregation": "REAL",
     "pregame_information_edge": "REAL",
@@ -207,9 +209,10 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             escalate, veto_reason, gate_score, latency_ms,
             input_tokens, output_tokens,
             liquidity_usd, bid_shares, ask_shares, model, outcome,
-            event_title, period, hours_to_event, description, tags
+            event_title, period, hours_to_event, description, tags,
+            politics_or_government
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                  ?,?,?,?,?,?,?,?,?,?)""",
+                  ?,?,?,?,?,?,?,?,?,?,?)""",
         (
             datetime.now(timezone.utc).isoformat(),
             v.market_slug,
@@ -248,6 +251,7 @@ def store(conn: sqlite3.Connection, v: TriageVerdict, market: dict, bbo: dict) -
             _hours_until(market.get("event_at")),
             (market.get("description") or "")[:1500],
             json.dumps(market.get("tags") or []),
+            v.politics_or_government,
         ),
     )
     conn.commit()

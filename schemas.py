@@ -46,6 +46,7 @@ class TriageVerdict(BaseModel):
     federal_policy_outcome: float = Field(0.0, ge=0.0, le=1.0)
     defense_or_military: float = Field(0.0, ge=0.0, le=1.0)
     us_election_or_appointment: float = Field(0.0, ge=0.0, le=1.0)
+    politics_or_government: float = Field(0.0, ge=0.0, le=1.0)
 
     # --- tractability ------------------------------------------------
     objective_resolution: float = Field(0.0, ge=0.0, le=1.0)
@@ -80,11 +81,12 @@ class TriageVerdict(BaseModel):
 
     @property
     def restricted_max(self) -> float:
-        """Max, not mean: three alternative routes to the same problem."""
+        """Max, not mean: alternative routes to the same problem."""
         return max(
             self.federal_policy_outcome,
             self.defense_or_military,
             self.us_election_or_appointment,
+            self.politics_or_government,
         )
 
 

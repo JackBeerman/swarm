@@ -244,9 +244,11 @@ def iter_event_markets(
 # sweep over that sample is a cliff, not a curve, and tuning against it
 # would tune the gate to baseball.
 DEFAULT_TAG_MIX = (
-    "economics", "business", "crypto", "culture", "science",
-    "politics", "sports",
+    "economics", "business", "crypto", "culture", "science", "sports",
 )
+# No "politics": Jack does not trade it, so sampling it is wasted quotes.
+# questions.political_tag() and the politics_or_government Noul still
+# guard the other tags, where political markets also turn up.
 
 
 async def fetch_events_across_tags(
