@@ -37,6 +37,7 @@ from adapters import (
     iter_event_markets,
     normalize_bbo,
     normalize_market,
+    price_band_reject,
 )
 from config import Config, ConfigError, setup_logging
 from questions import GateThresholds, StructuralLimits
@@ -61,7 +62,8 @@ class Daemon:
                  quote_concurrency: int = 2,
                  tags: "tuple[str, ...] | None" = None,
                  start_window_hours: float | None = None,
-                 min_hours_to_event: float | None = None):
+                 min_hours_to_event: float | None = None,
+                 min_edge: float | None = None):
         self.cfg = cfg
         # Mirrors shadow.py. Without these a paper cycle reads the default
         # listing page -- season futures and awards, none of the weekend's
@@ -71,6 +73,13 @@ class Daemon:
         self.tags = tags
         self.start_window_hours = start_window_hours
         self.min_hours_to_event = min_hours_to_event
+        # Per-run override of RiskConfig.min_edge. The 0.10 default is
+        # arithmetic, not caution -- and on 2026-09-20 it was right by
+        # $3.16: every escalation was a ~0.93 contract, none could clear
+        # it, and buying them all returned -28%. This exists so a PAPER
+        # cycle can show what the sizer would do at a lower bar, not as a
+        # recommendation to lower it.
+        self.min_edge = min_edge
         self.poll_seconds = poll_seconds
         self.once = once
         # A market is re-triaged at most once per cooldown window. Its
@@ -132,7 +141,8 @@ class Daemon:
                     search=default_search(enabled=self.cfg.mode != "shadow"),
                     budget=budget,
                     gate=GateThresholds(),
-                    risk=RiskConfig(),
+                    risk=(RiskConfig(min_edge=self.min_edge)
+                          if self.min_edge is not None else RiskConfig()),
                     limits=(StructuralLimits(min_hours_to_close=self.min_hours_to_event)
                             if self.min_hours_to_event is not None
                             else StructuralLimits()),
@@ -213,8 +223,16 @@ class Daemon:
         self._last_seen = {s: t for s, t in self._last_seen.items() if t > cutoff}
         # Interleave before truncating, or the cap takes one event's legs
         # and the cycle sees a single sport.
+        # Prescreen extremes before spending a paced quote, as the
+        # collector does. A single game lists ~800 markets extreme-first
+        # ("cover 17.5" at 0.985); with one event, interleaving changes
+        # nothing, and the cap would otherwise be spent entirely on lines
+        # the price band rejects.
+        lim = swarm.limits
         fresh = interleave_by_event(
-            [p for p in pairs if p[0].get("slug") not in self._last_seen]
+            [p for p in pairs
+             if p[0].get("slug") not in self._last_seen
+             and not price_band_reject(p[0], lim.min_price, lim.max_price)]
         )[:self.markets_per_cycle]
 
         log.info(
@@ -452,6 +470,11 @@ def main() -> int:
     ap.add_argument("--min-hours", type=float, default=None,
                     help="research window on the EVENT clock for this run; "
                          "default keeps questions.py (6h)")
+    ap.add_argument("--min-edge", type=float, default=None,
+                    help="override RiskConfig.min_edge for this run (default "
+                         "0.10). For PAPER runs: shows what the sizer would "
+                         "do at a lower bar. Buying every 2026-09-20 "
+                         "escalation below that bar returned -28%%")
     ap.add_argument("--test-order", metavar="SLUG", default=None,
                     help="place ONE tiny live order on this market and exit. "
                          "Requires SWARM_MODE=live and the I_UNDERSTAND gate "
@@ -490,6 +513,7 @@ def main() -> int:
         tags=tuple(t.strip() for t in args.tags.split(",")) if args.tags else None,
         start_window_hours=args.start_window,
         min_hours_to_event=args.min_hours,
+        min_edge=args.min_edge,
     )
 
     async def runner() -> int:
