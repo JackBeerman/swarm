@@ -1,149 +1,284 @@
-# Polymarket US trading swarm
+# swarm
 
-Three-tier evaluation pipeline. **Defaults to shadow mode — it will not
-place an order until you deliberately turn that on.**
+An autonomous trading pipeline for [Polymarket US](https://polymarket.us),
+built to answer one question: **what is a System One model good for inside
+a real decision system?**
+
+The model is [Jev](https://docs.typesafe.ai) from TypeSafe. It does not
+generate text. It takes a JSON state and a set of typed questions and returns
+probabilities your code branches on, in about 300 ms, for about $0.00008 a
+call. This repo puts it where that profile matters most: in front of
+expensive LLM research, deciding which of ~10,000 open markets deserve any
+money spent on them at all.
+
+The treasury is $100. That is deliberate. At that size every wasted research
+call is visible, so the value of the cheap tier is measurable.
+
+**Status: infrastructure is well tested; edge is not demonstrated.** One real
+order has been placed and settled (2 shares, to prove the round trip).
+Everything else has run in shadow or paper mode. See
+[What we have measured](#what-we-have-measured) before drawing conclusions.
+
+## The shape
+
+```text
+ ~10,000 open markets
+        |
+        |  structural_filter()      code, free
+        |  spread, depth, volume, clocks, political tags
+        v
+ Tier 1  Jev (jev-1.13.0)           ~$0.00008, ~300 ms      every survivor
+        |  7-8 typed questions in ONE request
+        |  restricted veto -> floors -> composite gate score
+        v
+ Tier 2  3x Claude Haiku 4.5        ~$0.10 with web search   ~3-6% of markets
+        |  sleuth / historian / red team, one search each
+        v
+ Tier 3  Claude Opus 5              ~$0.05
+        |  returns a probability and a confidence. Never a size.
+        v
+ size_from_signal()                 code: fractional Kelly, caps, min edge
+        |
+        v
+ daemon.py                          the only file that can place an order
+```
+
+The economic argument is the ratio between tiers. A full evaluation costs
+roughly 1,500x a Jev call. $100 buys about 1.2 million triage calls or about
+700 full evaluations, so the gate is where the budget is won or lost.
+
+## How Jev is used
+
+All of it lives in [questions.py](questions.py). That file is the experiment;
+the rest is plumbing.
+
+### 1. One request, several independent judgments
+
+Jev reads the state once and answers every question against it in parallel,
+and output tokens are free. So triage asks everything it might need in a
+single call rather than chaining calls:
+
+| question | primitive | what it decides |
+| --- | --- | --- |
+| `federal_policy_outcome` | Noul | restricted-domain veto |
+| `defense_or_military` | Noul | restricted-domain veto |
+| `us_election_or_appointment` | Noul | restricted-domain veto |
+| `politics_or_government` | Noul | restricted-domain veto |
+| `objective_resolution` | Noul | can two readers agree how this resolves? |
+| `self_contained` | Noul | general markets only |
+| `research_would_help` | Score (3 levels) | general markets only |
+| `outcome_type` | Choice | general: what process generates the result |
+| `stat_aggregation` | Score (3 levels) | sports: one play, or many? |
+| `pregame_information_edge` | Score (3 levels) | sports |
+| `sports_market_type` | Choice | sports |
+
+Which tractability block is asked is a tag lookup in code, not a question.
+
+### 2. The three primitives, used for what each one means
+
+- **Noul** is P(yes) for a condition. It carries no confidence field, and a
+  value near 0.5 means "unsure", not "medium". We use Nouls for vetoes and
+  floors.
+- **Score** is a probability-weighted position on ordered levels that we
+  write. Its `confidence` is how concentrated the distribution is.
+- **Choice** picks one of a defined set and returns the full distribution.
+
+### 3. Code owns everything deterministic
+
+Spread, depth, volume, time to event, game state and tag membership are
+arithmetic or string comparison, so they run in `structural_filter()` before
+Jev is called and are never sent to it. The state Jev sees is five fields:
+`question`, `outcome`, `event`, `description`, `tags`. No prices, no news.
+Tier 1 judges what *kind* of market this is, never who will win. Asking a
+model about things it cannot see gets an answer from its weights.
+
+### 4. A hard veto on the max
+
+The operator does not trade politics, government policy, or defense, in any
+country. Two layers enforce it: `political_tag()` in code, then four Nouls
+with a veto if the **max** exceeds 0.12. Max, not mean: they are alternative
+routes to the same problem, and averaging would let one loud signal be
+drowned by three quiet ones.
+
+Measured on `jev-1.13.0` with 17 labelled markets
+([tools/probe_restricted.py](tools/probe_restricted.py)): political markets
+scored 0.95-0.99, everything else at or below 0.05, including the awkward
+cases (Commanders vs Patriots sacks; NFL Defensive Player of the Year). The
+probe also found a real hole: three US-scoped questions scored a UK election
+at 0.02. Re-run it after any edit to veto wording. It costs a tenth of a cent.
+
+### 5. A composite gate, in code
+
+Floors first, then one weighted mean of the tractability answers minus a
+penalty keyed on the Choice, against one threshold. Weights and thresholds
+live in `GateThresholds` and can be re-swept over stored answers for free
+(`shadow.py --sweep`), because re-weighting does not need re-asking.
+
+### 6. Pinned model, strict parsing
+
+`jev-latest`, `jev-preview` and `jev-1.13` all float. Live mode refuses any id
+that is not `jev-N.N.N`, since a model update silently recalibrates every
+threshold. Answers are parsed strictly: a missing or malformed answer raises
+rather than defaulting to 0.0, because on a veto question 0.0 means "allowed".
+
+## What we have learned about Jev
+
+Working notes, from running it rather than reading about it.
+
+**It earns its place as a filter.** ~300 ms and ~$0.00008 per market means
+triage is never the bottleneck; exchange rate limits are (about one quote per
+1.2 s). We stopped optimizing Tier 1 cost entirely.
+
+**It is repeatable.** The same market triaged twice moved a Noul by 0.02 on
+average. Thresholds more than ~0.05 from where answers cluster are stable.
+
+**It reads literally.** "Answers the question you wrote, not the one you
+meant" is accurate. A Score signal reading "exact margin" swept up point
+spreads, which are thresholds, not exact margins, and vetoed 33 of 40 game
+result markets. A veto question that inspected `question` but not `outcome`
+could not see "Secretary of Defense" sitting in the outcome leg.
+
+**Question design is the whole job, and it is hard.** Of the sports block's
+three signals, two are near-constant on real data (sd 0.10 on a 0-2 scale;
+sd 0.02 on a 0-1 scale). A question that does not vary is a constant with a
+weight on it. [PROPOSALS.md](PROPOSALS.md) has the audit and proposed rewrites.
+
+**Bugs here are silent.** The recurring failure in this repo is a plausible
+0.0: three ANDed thresholds whose joint pass rate was zero, factors multiplied
+against a fixed threshold, a share floor compared to a level count. Each
+looked like "the model said no". [CLAUDE.md](CLAUDE.md) documents them.
+
+**It is not a forecaster, and we do not use it as one.** Jev's calibration is
+about the question asked. A Noul of 0.90 on `objective_resolution` is a claim
+about the market's wording, not about the bet.
+
+## What we have measured
+
+Be careful with all of it.
+
+- 602 triage verdicts, 170 of which reached Jev (the rest were rejected
+  structurally, for free). 178 resolved, from **14 events on one NFL Sunday**.
+- Escalated and resolved: 29 markets. Buying YES at the ask returned -11%.
+  That is about one standard error from zero. It shows nothing either way.
+- An apparent calibration gap (0.92-0.96 priced at 94%, won 82%) came from
+  low "overs" on a single low-scoring day. It is a hypothesis, not a finding.
+- Markets inside one event resolve together, so **the sample size is events,
+  not markets**, and days, not events, when one slate shares a shock. A claim
+  about strategy return needs roughly 100+ events over 10+ days.
+
+What the project can honestly claim today: the cheap tier works as a filter,
+the veto separates cleanly, and the plumbing is sound. Whether the gate picks
+markets where research beats the price is the open question.
 
 ## Layout
 
 | file | what it is |
-|---|---|
-| `questions.py` | **Edit this one.** Every Jev question and gate threshold. |
-| `swarm.py` | The pipeline: Jev triage → gatherers → Astra → sizing. |
-| `risk_engine.py` | NLV, persistent cost ledger, kill switch. |
-| `adapters.py` | Normalizes polymarket_us SDK types. Do not bypass. |
-| `schemas.py` | Pydantic contracts between tiers. |
-| `shadow.py` | Triage-only calibration runner. **Start here.** |
-| `daemon.py` | Entry point. |
-| `config.py` | Env loading with fail-fast validation. |
+| --- | --- |
+| [questions.py](questions.py) | **The experiment.** Every Jev question, threshold and structural limit. |
+| [swarm.py](swarm.py) | Jev client, gate, gatherers, synthesis, sizing. |
+| [adapters.py](adapters.py) | Normalizes `polymarket_us` wire shapes. Do not bypass. |
+| [schemas.py](schemas.py) | Pydantic contracts between tiers. |
+| [shadow.py](shadow.py) | Triage-only collector, settlement backfill, scoring, calibration. **Start here.** |
+| [daemon.py](daemon.py) | Entry point. The only place an order can be created. |
+| [risk_engine.py](risk_engine.py) | NLV, cost ledger, kill switch. |
+| [search.py](search.py) | Web search for Tier 2 (Anthropic server tool). |
+| [traces.py](traces.py) | What Tiers 2/3 believed, kept so it can be scored. |
+| [inplay.py](inplay.py) | Websocket feed and in-game experiments. |
+| [config.py](config.py) | Env loading, fail-fast validation. |
+| [tools/](tools/) | `probe_restricted.py`, `survey_tags.py`, `by_category.py`. |
+| [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
+| [PROPOSALS.md](PROPOSALS.md) | Question changes awaiting a human decision. |
 
-## Setup (VS Code)
+## Setup
 
 ```bash
-make setup          # venv + deps + creates .env from the template
-# put your Jev key in .env  ->  TYPESAFE_API_KEY=...
-make test           # 84 tests, no network, no key needed
-python verify_setup.py
+make setup                 # venv, deps, .env from the template
+# put your own keys in .env; it is gitignored. Never commit or paste it.
+make test                  # 169 tests, no network, no keys needed
+python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 
-No `make` on Windows? The same four steps, spelled out (PowerShell):
+Windows without `make`:
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
-copy .env.example .env          # then put your Jev key in it
+copy .env.example .env
 .venv\Scripts\python.exe -m pytest -q
 .venv\Scripts\python.exe verify_setup.py
 ```
 
-Then in VS Code: **Python: Select Interpreter** -> `.venv\Scripts\python.exe`
-(`./.venv/bin/python` on macOS/Linux).
-Tests appear in the Testing sidebar; `.vscode/launch.json` has debug
-configs for each shadow command and for paper mode.
+Only `TYPESAFE_API_KEY` is needed for shadow mode. Set
+`TYPESAFE_DEFAULT_MODEL=jev-1.13.0`.
 
-`verify_setup.py` makes exactly one live Jev call (~$0.00007) to prove
-the key works *and* that the response shape matches what the code parses.
+## Modes
 
-There is deliberately **no launch config and no make target for live
-mode.** Live trading should be a conscious command typed in a terminal,
-not something you can fat-finger from a dropdown.
+| mode | Jev | Tier 2/3 | orders | needs |
+| --- | --- | --- | --- | --- |
+| `shadow` (default) | yes | no | none | TypeSafe key |
+| `paper` | yes | yes, real spend | logged, never sent | + Polymarket and Anthropic keys, funded account |
+| `live` | yes | yes | **real** | + `I_UNDERSTAND_THIS_TRADES_REAL_MONEY=yes`, pinned model |
 
-## The order to do things in
+There is no make target and no launch config for live mode. It is typed in a
+terminal, on purpose, and the two live variables are never written to `.env`.
 
-**1. Calibrate the gate (days, costs cents).**
-
-```bash
-python shadow.py --collect --limit 200    # --limit is MARKETS, not events
-python shadow.py --analyze
-python shadow.py --sweep gate_score
-```
-
-Run `--collect` repeatedly over days. A 20h cooldown means a market is
-triaged once per run rather than every time, so repeated sweeps widen the
-sample instead of re-asking the same question.
-
-Events are sampled across tags (`economics`, `crypto`, `culture`,
-`politics`, `sports`, …), not taken from the default listing page. That
-page is roughly half sports, and sports markets are uniformly
-`contested_event`: a sweep drawn from it returned 33 markets that were
-all one outcome type, with gate scores spanning 0.38–0.48. Sweeping a
-threshold over that produces a cliff, not a curve, and would tune the
-gate to baseball.
-
-Quote requests are paced at 2 concurrent with 1.2s spacing. That is not
-conservatism — the volume floor needs a quote per market, and faster
-settings get Cloudflare-blocked and return HTML instead of JSON.
-
-Target a 3–6% escalation rate. Set `min_gate_score` in `questions.py`
-from the sweep. The shipped default is a guess and means nothing until
-you do this on a sample large enough to trust.
-
-**2. Paper trade (weeks).**
+### Shadow: cents, and where to start
 
 ```bash
-# keys in .env: POLYMARKET_KEY_ID, POLYMARKET_SECRET_KEY
-python verify_account.py          # read-only; asserts the shapes the
-                                  # risk engine reads, one call, no orders
-SWARM_MODE=paper python daemon.py
+python shadow.py --collect --limit 200   # triage and store; --limit is markets
+python shadow.py --backfill              # fill outcomes; settlement lands in minutes
+python shadow.py --analyze               # escalation rate, veto reasons
+python shadow.py --sweep gate_score      # re-score stored answers at other thresholds
+python shadow.py --score                 # escalated vs rejected, on resolved markets
+python shadow.py --calibrate             # price vs frequency, counted by event
+python tools/by_category.py 3            # per-category breakdown, last 3 hours
 ```
 
-**Fund the account before paper mode.** An unfunded account returns
-`{"balances": []}` (verified live), the risk engine computes NLV = $0,
-and `start()` halts at NLV ≤ $10 on its first refresh — it writes
-`.halted` and exits 2 before doing anything. That is the floor working,
-not a bug. `verify_account.py` exits 2 and says so when it sees it.
+Quotes are paced at 2 concurrent, 1.2 s apart. Faster gets Cloudflare-blocked
+and returns HTML. A 20 h cooldown stops a market being re-triaged every sweep.
 
-Paper mode also needs `ANTHROPIC_API_KEY`: Tier 2/3 and web search never
-fire in shadow, so nothing before paper exercises it.
-
-Observed on the first live fill (2 shares, cost $1.78): the balance
-record showed `assetNotional = 0` while the position's `cashValue` was
-$1.76. The risk engine takes the more conservative mark, so it read NLV
-as cash-only, $98.21 — safe direction, but `assetNotional` lags or does
-not cover this position type. Watch it once more positions exist. The
-order-create response also carries `executions = 0` on an order that is
-already `FILLED`; read the order back by id for the truth.
-
-Full pipeline, real money tracked, no orders placed. This is where you
-find out whether the escalated markets are *good*, not just few.
-
-**3. Live — only after 2 has a track record.**
+### Paper
 
 ```bash
-export SWARM_MODE=live
-export I_UNDERSTAND_THIS_TRADES_REAL_MONEY=yes
-export TYPESAFE_DEFAULT_MODEL=jev-1.13.0   # must be pinned
-python daemon.py
+python verify_account.py                 # read-only account check
+SWARM_MODE=paper python daemon.py --once --tags nfl --start-window 4 --min-hours 1
 ```
 
-## Exit codes
+An unfunded account reads as NLV $0 and trips the kill switch at startup.
+That is the floor working.
 
-| code | meaning | supervisor should |
-|---|---|---|
-| 0 | clean operator stop | may restart |
-| 2 | **kill switch** | **not restart** |
+## Safety rules
+
+Enforced in code and tests; see [CLAUDE.md](CLAUDE.md) for the full list.
+
+- No order is created outside `daemon.py`.
+- No LLM output is ever a dollar amount, share count or Kelly fraction.
+- The restricted veto is never widened and never averaged.
+- `SWARM_MODE` defaults to `shadow`.
+- The kill switch exits 2 and writes `.halted`. Nothing clears it but a human.
+
+| exit code | meaning | a supervisor should |
+| --- | --- | --- |
+| 0 | clean stop | may restart |
+| 2 | kill switch | **not restart** |
 | 3 | config problem | not restart |
-
-A kill switch writes a `.halted` sentinel. Startup refuses while it
-exists. Delete it by hand after reviewing the `halts` table in
-`ledger.db` — that manual step is the point.
 
 ## Not built yet
 
-- **`web_search` is a stub.** `_unconfigured_search` returns nothing, so
-  gatherers produce empty facts. Wire a provider before paper trading.
-- **`reflexion.py`** — needs a few hundred resolved markets first.
-- **Resolution backfill** — `shadow.db` has a `resolved_outcome` column
-  nothing fills. Until it is filled you are calibrating escalation
-  *rate*, not escalation *quality*.
-- **Websocket ingestion** — currently REST polling on a timer.
+- Per-event exposure cap. Props on one game are one bet; today they reserve
+  separately. Required before live trading.
+- Settlement backfill for `traces.db`, so Tier 3 can be scored against the
+  price it was shown.
+- Event-scoped fact cache, so 30 props on one game share one search.
+- Scheduled daily collection across categories. This is what produces a
+  sample large enough to mean anything.
+- A learning loop over resolved markets. Designed, deliberately not built:
+  it needs thousands of resolved markets across many days first.
 
-## Things that will bite you
+## Contributing
 
-- `jev-latest` and `jev-1.13` both float. Pin a versioned id (jev-1.13.0) or your
-  thresholds silently recalibrate on a model update.
-- `CreateOrderParams.quantity` is an `int`. Whole shares only.
-- `GetUserPositionsResponse.positions` is a **dict** keyed by slug.
-- SDK prices are `Amount` objects with decimal **strings**, not floats.
-- Field names are not the legacy CLOB ones: `title` not `question`,
-  `volume` not `volumeNum`, `volumeMin` not `volumeNumMin`. `endTime`
-  lives on the *Event*.
+Changes to question wording, thresholds or structural limits are proposals:
+open a PR that edits [PROPOSALS.md](PROPOSALS.md) or explains the evidence,
+and re-measure floors on a fresh shadow run, since any wording change
+recalibrates its thresholds. A test fixture is not evidence about the wire
+format; a probe against the live API is.
