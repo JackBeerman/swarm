@@ -580,15 +580,19 @@ def score(db: str = DB_PATH) -> None:
     the market: for each resolved verdict, how far was the mid-price from
     what actually happened. Brier = (mid - outcome)^2.
 
-    A gate that is working escalates markets whose price was MORE wrong
-    than average -- that is where edge lives. If escalated markets score
-    the same as rejected ones, the gate is selecting on something that
-    does not predict mispricing, and no threshold sweep will fix that.
+    Brier is dominated by the price level: E[(y-p)^2] = (q-p)^2 + q(1-q),
+    and the second term is largest near 0.50. A gate that happens to
+    escalate mid-priced markets "beats" one that escalates favourites
+    with no mispricing anywhere. So the comparison is made WITHIN price
+    bands, on the signed residual (outcome - mid): its mean is the
+    mispricing, and its sign says which way. An earlier version printed
+    "escalated markets were MORE mispriced" off the raw Brier; that
+    sentence was the confound talking.
     """
     with closing(connect(db)) as conn:
         rows = conn.execute(
             """SELECT escalate, bid, ask, gate_score, is_sports,
-                      resolved_outcome, veto_reason
+                      resolved_outcome, veto_reason, event_slug, market_slug
                FROM verdicts
                WHERE resolved_outcome IS NOT NULL
                  AND bid IS NOT NULL AND ask IS NOT NULL
@@ -624,17 +628,27 @@ def score(db: str = DB_PATH) -> None:
         print(f"  {name:<16} {len(rs):>5} {statistics.mean(b):>13.4f} "
               f"{base:>11.2f}")
 
-    if esc and rej:
-        be, br = statistics.mean(brier(esc)), statistics.mean(brier(rej))
-        print()
-        if be > br:
-            print(f"  escalated markets were MORE mispriced "
-                  f"({be:.4f} vs {br:.4f}) -- the gate is selecting for "
-                  f"the thing you want.")
-        else:
-            print(f"  escalated markets were no more mispriced "
-                  f"({be:.4f} vs {br:.4f}). The gate is not finding "
-                  f"mispricing; sweeping min_gate_score will not fix that.")
+    def mid(r):
+        return (float(r["bid"]) + float(r["ask"])) / 2.0
+
+    def resid(rs):
+        return [float(r["resolved_outcome"]) - mid(r) for r in rs]
+
+    print("\n  signed residual (outcome - mid) by price band; + means YES was underpriced")
+    print(f"  {'band':<11}{'esc n':>7}{'esc mean':>10}{'rej n':>7}{'rej mean':>10}   events")
+    bands = [(0.0, 0.5), (0.5, 0.7), (0.7, 0.85), (0.85, 0.92), (0.92, 0.96), (0.96, 1.01)]
+    for lo, hi in bands:
+        e = [r for r in esc if lo <= mid(r) < hi]
+        j = [r for r in rej if lo <= mid(r) < hi]
+        if not e and not j:
+            continue
+        ev = len({_row_event(r) for r in e + j})
+        em = f"{statistics.mean(resid(e)):+.3f}" if e else "     --"
+        jm = f"{statistics.mean(resid(j)):+.3f}" if j else "     --"
+        print(f"  {lo:.2f}-{hi if hi <= 1 else 1.0:.2f}{len(e):>7}{em:>10}{len(j):>7}{jm:>10}   {ev}")
+    print("\n  Read the events column first. Escalated and rejected rows in the same band")
+    print("  share the same mechanical Brier, so a difference here is about selection.")
+    print("  It is a hypothesis until it holds across days and categories.")
 
     sports = [r for r in rows if r["is_sports"]]
     if sports:

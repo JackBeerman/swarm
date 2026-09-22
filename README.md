@@ -184,12 +184,16 @@ about the market's wording, not about the bet.
 
 Be careful with all of it.
 
-- 602 triage verdicts, 170 of which reached Jev (the rest were rejected
-  structurally, for free). 178 resolved, from **14 events on one NFL Sunday**.
-- Escalated and resolved: 29 markets. Buying YES at the ask returned -11%.
-  That is about one standard error from zero. It shows nothing either way.
-- An apparent calibration gap (0.92-0.96 priced at 94%, won 82%) came from
-  low "overs" on a single low-scoring day. It is a hypothesis, not a finding.
+- 830 triage verdicts across ten categories; 399 resolved with a quote,
+  from **21 events on two NFL days** (Sunday and Monday, 2026-09-20/21).
+  No non-sports market has resolved yet.
+- Escalated and resolved: 65 markets. The raw Brier comparison between
+  escalated and rejected markets is confounded by price level and is no
+  longer printed as a conclusion; `--score` now compares signed residuals
+  within price bands.
+- Favourites priced 0.92-0.96 won 91% (225 markets, 15 events); those
+  priced above 0.96 won 88% (24 markets, 12 events). Two days of one sport.
+  A hypothesis, not a finding.
 - Markets inside one event resolve together, so **the sample size is events,
   not markets**, and days, not events, when one slate shares a shock. A claim
   about strategy return needs roughly 100+ events over 10+ days.
