@@ -201,3 +201,34 @@ def test_request_carries_the_brief_and_a_matched_scenario_prices_the_edge():
                     "contradicts_brief": {"type": "noul", "noul": 0.02}})
     head, _ = fl.read_answers(body, 1)
     assert head["scenario"] == "qb_out" and head["contradicts"] == 0.02
+
+
+async def test_watchlist_drops_a_market_the_restricted_veto_fires_on(monkeypatch):
+    """
+    The tech watchlist picked up IPO markets that resolve on an SEC filing;
+    the slow lane had vetoed them at 0.83. Same veto, same max, here.
+    """
+    class FakeJev:
+        _model = "jev-1.13.0"
+        async def _post(self, payload):
+            pol = 0.83 if "IPO" in (payload["state"].get("question") or "") else 0.02
+            return {"answers": {n: {"noul": pol if n == "federal_policy_outcome" else 0.01}
+                                for n in fl.RESTRICTED_QUESTIONS}}
+    watch = {"ipos": {"title": "IPOs", "markets": [
+                 {"slug": "a", "question": "Anthropic IPO confirmed?", "outcome": "Yes"},
+                 {"slug": "b", "question": "GTA VI released by Dec?", "outcome": "Yes"}]},
+             "only-bad": {"title": "x", "markets": [
+                 {"slug": "c", "question": "OpenAI IPO confirmed?", "outcome": "Yes"}]}}
+    await fl.drop_restricted(FakeJev(), watch)
+    assert [m["slug"] for m in watch["ipos"]["markets"]] == ["b"]
+    assert "only-bad" not in watch
+
+
+async def test_watchlist_treats_an_unchecked_market_as_vetoed():
+    class BrokenJev:
+        _model = "jev-1.13.0"
+        async def _post(self, payload):
+            raise RuntimeError("down")
+    watch = {"e": {"title": "t", "markets": [{"slug": "a", "question": "q", "outcome": "o"}]}}
+    await fl.drop_restricted(BrokenJev(), watch)
+    assert watch == {}

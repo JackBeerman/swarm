@@ -64,7 +64,9 @@ from adapters import (  # noqa: E402
 )
 from questions import (  # noqa: E402
     FASTLANE_HEADLINE_QUESTIONS,
+    RESTRICTED_QUESTIONS,
     FastLaneThresholds,
+    GateThresholds,
     fastlane_market_questions,
     fastlane_scenario_questions,
     political_tag,
@@ -81,14 +83,64 @@ log = logging.getLogger("fastlane")
 
 DB_PATH = os.getenv("FASTLANE_DB", "fastlane.db")
 
-# Free, no key. Measured 2026-09-21: all answer in under 700 ms.
-FEEDS: dict[str, str] = {
-    "yahoo_nfl": "https://sports.yahoo.com/nfl/rss/",
-    "espn_nfl": "https://www.espn.com/espn/rss/nfl/news",
-    "pft": "https://profootballtalk.nbcsports.com/feed/",
-    "cbs_nfl": "https://www.cbssports.com/rss/headlines/nfl/",
-    "rotowire_nfl": "https://www.rotowire.com/rss/news.php?sport=NFL",
+# Free, no key, keyed by the exchange tag they cover. Probed 2026-09-22:
+# every one answers in under 500 ms; freshness varies from minutes
+# (Yahoo, CoinDesk, Deadline) to half a day (TechCrunch, Google blog).
+FEEDS_BY_TAG: dict[str, dict[str, str]] = {
+    "nfl": {
+        "yahoo_nfl": "https://sports.yahoo.com/nfl/rss/",
+        "espn_nfl": "https://www.espn.com/espn/rss/nfl/news",
+        "pft": "https://profootballtalk.nbcsports.com/feed/",
+        "cbs_nfl": "https://www.cbssports.com/rss/headlines/nfl/",
+        "rotowire_nfl": "https://www.rotowire.com/rss/news.php?sport=NFL",
+    },
+    "mlb": {
+        "yahoo_mlb": "https://sports.yahoo.com/mlb/rss/",
+        "espn_mlb": "https://www.espn.com/espn/rss/mlb/news",
+        "cbs_mlb": "https://www.cbssports.com/rss/headlines/mlb/",
+        "rotowire_mlb": "https://www.rotowire.com/rss/news.php?sport=MLB",
+        "mlbtr": "https://www.mlbtraderumors.com/feed",
+    },
+    "tech": {
+        "verge": "https://www.theverge.com/rss/index.xml",
+        "techcrunch_ai": "https://techcrunch.com/category/artificial-intelligence/feed/",
+        "arstechnica": "https://feeds.arstechnica.com/arstechnica/technology-lab",
+        "google_blog": "https://blog.google/rss/",
+        "openai_news": "https://openai.com/news/rss.xml",
+        "hn_front": "https://hnrss.org/frontpage",
+    },
+    "crypto": {
+        "coindesk": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+        "cointelegraph": "https://cointelegraph.com/rss",
+    },
+    "entertainment": {
+        "variety": "https://variety.com/feed/",
+        "deadline": "https://deadline.com/feed/",
+    },
+    "music": {
+        "billboard": "https://www.billboard.com/feed/",
+        "variety": "https://variety.com/feed/",
+    },
+    "esports": {
+        "hltv": "https://www.hltv.org/rss/news",
+        "dotesports": "https://dotesports.com/feed",
+    },
 }
+FEEDS_BY_TAG["sports"] = {**FEEDS_BY_TAG["nfl"], **FEEDS_BY_TAG["mlb"]}
+FEEDS_BY_TAG["economics"] = FEEDS_BY_TAG["business"] = FEEDS_BY_TAG["tech"]
+FEEDS: dict[str, str] = FEEDS_BY_TAG["nfl"]          # default, and what tests import
+
+#: Tags whose events are games with a start time. Everything else is a
+#: standing market (a product release, a chart position) that has no
+#: kickoff, so the watchlist is built from open markets by tag instead.
+GAME_TAGS = {"nfl", "mlb", "nba", "nhl", "sports", "esports", "soccer", "mls", "cfb", "ufc", "mma"}
+
+
+def feeds_for(tags: tuple[str, ...]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for t in tags:
+        out.update(FEEDS_BY_TAG.get(t, {}))
+    return out or FEEDS
 
 FOLLOW_UPS = (("mid_1m", 60), ("mid_5m", 300), ("mid_30m", 1800))
 MAX_MARKETS_PER_EVENT = 6
@@ -242,13 +294,22 @@ def is_period_market(market: dict[str, Any]) -> bool:
 
 async def build_watchlist(
     pm: Any, tags: tuple[str, ...], start_window_hours: float, per_event: int,
+    max_events: int = 6,
 ) -> dict[str, dict[str, Any]]:
-    """{event_slug: {"title", "markets": [normalized, ...]}} for upcoming events."""
+    """
+    {event_slug: {"title", "markets": [normalized, ...]}}.
+
+    Games: events starting within the window. Standing markets (tech,
+    crypto, music): open events by tag, no time filter, since a product
+    release or a chart position has no kickoff.
+    """
     now = datetime.now(timezone.utc)
-    extra = {
-        "startTimeMin": (now - timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "startTimeMax": (now + timedelta(hours=start_window_hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
+    extra: dict[str, Any] = {}
+    if any(t in GAME_TAGS for t in tags):
+        extra = {
+            "startTimeMin": (now - timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "startTimeMax": (now + timedelta(hours=start_window_hours)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
     events = await fetch_events_across_tags(pm, tags=tags, per_tag=20, extra=extra)
     by_event: dict[str, dict[str, Any]] = {}
     for market, ev in iter_event_markets({"events": events}):
@@ -268,7 +329,44 @@ async def build_watchlist(
         slot["markets"].append((is_period_market(n), abs(mid - 0.5), n))
     for slot in by_event.values():
         slot["markets"] = [n for _, _, n in sorted(slot["markets"], key=lambda t: t[:2])[:per_event]]
-    return {k: v for k, v in by_event.items() if v["markets"]}
+    # Most markets nearest 0.50 first; standing-market tags list dozens of
+    # events and one brief costs ~$0.03, so the count is capped.
+    ranked = sorted(((k, v) for k, v in by_event.items() if v["markets"]),
+                    key=lambda kv: -len(kv[1]["markets"]))
+    return dict(ranked[:max_events])
+
+
+async def drop_restricted(jev: JevTriage, watch: dict[str, dict[str, Any]],
+                          max_restricted: float = GateThresholds().max_restricted) -> None:
+    """
+    The same veto the slow lane applies, on every watched MARKET, before a
+    brief is written or a headline judged. Found 2026-09-22: the tech
+    watchlist picked up IPO markets that resolve on an SEC filing -- the
+    slow lane had vetoed them at 0.83 on federal_policy_outcome the day
+    before, and the fast lane was checking only the political tag and the
+    headline. Max of the four Nouls, never the mean; a Jev failure counts
+    as a veto, because an unchecked market must not be watched.
+    """
+    for slug, ev in list(watch.items()):
+        kept = []
+        for m in ev["markets"]:
+            state = {k: m.get(k) for k in ("question", "outcome", "description", "tags")}
+            state["event"] = ev.get("title")
+            try:
+                body = await jev._post({"model": jev._model, "state": state,
+                                        "questions": RESTRICTED_QUESTIONS})
+                worst = max(((name, float(body["answers"][name]["noul"]))
+                             for name in RESTRICTED_QUESTIONS), key=lambda t: t[1])
+            except Exception as exc:  # noqa: BLE001 -- unchecked is vetoed
+                log.warning("restricted check failed on %s, dropping: %s", m["slug"], exc)
+                continue
+            if worst[1] > max_restricted:
+                log.info("   VETO %s: %s=%.2f", m["slug"][:44], worst[0], worst[1])
+                continue
+            kept.append(m)
+        ev["markets"] = kept
+        if not kept:
+            del watch[slug]
 
 
 # --------------------------------------------------------------------------
@@ -297,9 +395,32 @@ Rules:
 - Never apologise or explain. If a search fails, use what you know. The reply must start with {{ and end with }}."""
 
 
+_BRIEF_PROMPT_GENERAL = """You are writing a pre-event brief that a fast classifier will read as news arrives. Search the web for the current state of play on this question: {event}.
+
+The markets being watched, with the current YES price for each:
+{markets}
+
+Return ONLY a JSON object, no prose, of this exact shape:
+{{
+  "teams": {{"<party or entity>": ["<key person, product, or detail>", ...], ...}},
+  "facts": ["<one dated fact per string, e.g. 'Google said Gemini 3.5 is in testing, 9/18'>", ...],
+  "scenarios": [
+    {{"id": "<short_snake_case>", "trigger": "<a concrete development a headline could report, e.g. 'Google officially announces Gemini 3.5 Pro general availability'>",
+      "affects": {{"<market key>": <fair YES probability 0-1>, ...}}}}
+  ]
+}}
+
+Rules:
+- teams: the entities headlines will name (companies, products, artists, people), with the details that identify them. Up to 6 entities, up to 10 details each.
+- facts: 4-10 strings, each dated, each something a headline could later contradict.
+- scenarios: 4-8. Each trigger must be a specific event that either happens or does not (an official announcement, a release, a delay, a denial, a rival shipping first). For each scenario give your fair YES probability for EVERY market key listed above under "affects", including ones the trigger barely moves (repeat the current price for those).
+- Never apologise or explain. If a search fails, use what you know. The reply must start with {{ and end with }}."""
+
+
 async def build_brief(client: httpx.AsyncClient, event_title: str,
                       markets: list[dict[str, Any]] | None = None,
-                      quotes: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+                      quotes: dict[str, dict[str, Any]] | None = None,
+                      sport: bool = True) -> dict[str, Any]:
     """
     Who plays for whom, written by an LLM BEFORE any headline arrives.
 
@@ -332,7 +453,7 @@ async def build_brief(client: httpx.AsyncClient, event_title: str,
                      "content-type": "application/json"},
             json={"model": SEARCH_MODEL, "max_tokens": 3000,
                   "messages": [{"role": "user",
-                                "content": _BRIEF_PROMPT.format(
+                                "content": (_BRIEF_PROMPT if sport else _BRIEF_PROMPT_GENERAL).format(
                                     event=event_title,
                                     markets=_markets_block(markets or [], quotes or {}))}],
                   "tools": [{"type": WEB_SEARCH_TOOL, "name": "web_search", "max_uses": 3}]})
@@ -583,6 +704,8 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
               poll_seconds: float, replay: int, per_event: int,
               brief: bool = True) -> None:
     th = FastLaneThresholds()
+    feeds = feeds_for(tags)
+    sport = any(t in GAME_TAGS for t in tags)
     async with AsyncPolymarketUS() as pm, httpx.AsyncClient(
         timeout=10, follow_redirects=True,
         headers={"User-Agent": "Mozilla/5.0 (research; rss reader)"},
@@ -590,6 +713,12 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
         watch = await build_watchlist(pm, tags, start_window, per_event)
         if not watch:
             log.error("no upcoming events for tags=%s within %sh", tags, start_window)
+            return
+        jev = JevTriage()
+        await drop_restricted(jev, watch)
+        if not watch:
+            log.error("every watched market was vetoed")
+            await jev.aclose()
             return
         quotes = QuoteFetcher(pm, concurrency=2)
         for slug, ev in list(watch.items()):
@@ -609,7 +738,7 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
                 bq = {}
                 for m in live:
                     bq[m["slug"]] = await quotes.bbo(m["slug"]) or {}
-                ev["brief"] = await build_brief(client, ev["title"], live, bq)
+                ev["brief"] = await build_brief(client, ev["title"], live, bq, sport=sport)
                 ev["teams"] = ev["brief"].get("teams") or {}
                 if ev["brief"]:
                     with closing(connect()) as bconn:
@@ -631,14 +760,14 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
             log.error("no watched market has a tight enough book")
             return
 
-        jev = JevTriage()
         with closing(connect()) as conn:
             rec = Recorder(conn, jev, quotes, watch, th)
 
             first = [h for batch in await asyncio.gather(
-                *(poll_feed(client, s, u) for s, u in FEEDS.items())) for h in batch]
+                *(poll_feed(client, s, u) for s, u in feeds.items())) for h in batch]
             seen = {(h["url"], h["title"]) for h in first}
-            log.info("baseline: %d existing items across %d feeds", len(first), len(FEEDS))
+            log.info("baseline: %d existing items across %d feeds (%s)", len(first), len(feeds),
+                     ", ".join(feeds))
             if replay:
                 newest = sorted(first, key=lambda h: h["published_at"] or "", reverse=True)
                 for h in newest[:replay]:
@@ -648,7 +777,7 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
             while time.monotonic() < deadline and not replay:
                 await asyncio.sleep(poll_seconds)
                 batches = await asyncio.gather(
-                    *(poll_feed(client, s, u) for s, u in FEEDS.items()))
+                    *(poll_feed(client, s, u) for s, u in feeds.items()))
                 for h in (h for b in batches for h in b):
                     key = (h["url"], h["title"])
                     if key in seen:
@@ -750,7 +879,8 @@ def score(db: str = DB_PATH) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Shadow-only recorder: Jev reads headlines, prices are followed.")
-    ap.add_argument("--tags", default="nfl")
+    ap.add_argument("--tags", default="nfl",
+                    help="exchange tags; also selects the news feeds: " + ", ".join(FEEDS_BY_TAG))
     ap.add_argument("--start-window", type=float, default=6.0, help="hours ahead to look for events")
     ap.add_argument("--minutes", type=float, default=240.0, help="how long to poll")
     ap.add_argument("--poll", type=float, default=20.0, help="seconds between feed polls")
