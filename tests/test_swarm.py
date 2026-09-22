@@ -805,6 +805,7 @@ async def test_leaked_reservations_would_starve_sizing():
 
 async def test_sampling_dropped_for_models_that_reject_it():
     for model in (
+        "anthropic/claude-opus-5-5",
         "anthropic/claude-opus-5",
         "anthropic/claude-sonnet-5",
         "anthropic/claude-opus-4-8",

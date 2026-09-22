@@ -88,9 +88,9 @@
   <!-- 5. tier 3 -->
   <rect class="llm" x="190" y="526" width="320" height="58" rx="8"/>
   <text class="llmink" x="210" y="548" font-size="11" font-weight="700" letter-spacing="1.2">TIER 3</text>
-  <text class="ink" x="262" y="549" font-size="15" font-weight="600">Claude Opus 5 synthesis</text>
+  <text class="ink" x="262" y="549" font-size="15" font-weight="600">Claude Opus 5.5 synthesis</text>
   <text class="mute" x="210" y="569" font-size="12.5">a probability and a confidence. Never a size.</text>
-  <text class="ink" x="700" y="552" font-size="14" font-weight="600">~$0.05</text>
+  <text class="ink" x="700" y="552" font-size="14" font-weight="600">~$0.04</text>
   <text class="mute" x="850" y="560" font-size="13">LLM estimates</text>
 
   <path class="arrow" d="M350 584V602" stroke-width="1.5" marker-end="url(#a)"/>

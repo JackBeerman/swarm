@@ -3,7 +3,7 @@ swarm.py -- three-tier evaluation pipeline for the Polymarket US trading daemon.
 
     Tier 1  Jev (TypeSafe System One)   ~$0.0001   every candidate
     Tier 2  Claude Haiku 4.5 x3         ~$0.02     only past the gate
-    Tier 3  Claude Opus 5                ~$0.05     only past the gate
+    Tier 3  Claude Opus 5.5              ~$0.04     only past the gate
 
 The whole economic argument for this shape is that Tier 1 is effectively
 free and Tiers 2/3 are not. The gate must therefore be *strict*: at a $100
@@ -58,7 +58,7 @@ TYPESAFE_BASE_URL = os.getenv("TYPESAFE_BASE_URL", "https://api.typesafe.ai")
 TYPESAFE_MODEL = os.getenv("TYPESAFE_DEFAULT_MODEL", "jev-latest")
 
 TIER2_MODEL = os.getenv("TIER2_MODEL", "anthropic/claude-haiku-4-5")
-TIER3_MODEL = os.getenv("TIER3_MODEL", "anthropic/claude-opus-5")
+TIER3_MODEL = os.getenv("TIER3_MODEL", "anthropic/claude-opus-5-5")
 
 # litellm prices Tiers 2 and 3 for us. It does not know about Jev, so triage
 # is priced here. SET THESE from the TypeSafe console before going live --
@@ -731,7 +731,7 @@ async def _synthesize(
                 {"role": "user", "content": json.dumps(payload, default=str)},
             ],
             **sampling_kwargs(TIER3_MODEL, 0.1),
-            # Claude Opus 5 thinks by default, and thinking tokens count
+            # Claude Opus 5.5 thinks by default, and thinking tokens count
             # against max_tokens. At the original 1200 the reasoning could
             # consume the whole budget and truncate the JSON -- which is
             # handled "gracefully" below (no order), and so would burn
@@ -1115,7 +1115,7 @@ def sampling_kwargs(model: str, temperature: float) -> dict[str, float]:
     `temperature` where the model still accepts it, nothing where it does not.
 
     Anthropic removed the sampling parameters on Claude 4.6 and later:
-    Opus 5, Sonnet 5, Opus 4.8/4.7 and the Fable family return a **400** if
+    Opus 5.5, Opus 5, Sonnet 5, Opus 4.8/4.7 and the Fable family return a **400** if
     `temperature`, `top_p` or `top_k` is present. Haiku 4.5 and older models
     still take them, as do the OpenAI and Gemini models.
 
