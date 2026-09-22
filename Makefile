@@ -1,4 +1,4 @@
-.PHONY: setup test lint check shadow backfill analyze sweep score calibrate probe fastlane fastlane-score paper clean
+.PHONY: setup test lint check shadow backfill analyze sweep score calibrate probe fastlane fastlane-score weather paper clean
 
 VENV := .venv
 
@@ -60,3 +60,7 @@ fastlane:              ## shadow-only: Jev reads headlines, prices are followed 
 
 fastlane-score:
 	$(PY) fastlane.py --score
+
+weather:               ## NWS forecast vs weather-market prices, then fill outcomes (no orders)
+	$(PY) weather.py --backfill
+	$(PY) weather.py

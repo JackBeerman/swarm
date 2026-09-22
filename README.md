@@ -198,6 +198,22 @@ Be careful with all of it.
   not markets**, and days, not events, when one slate shares a shock. A claim
   about strategy return needs roughly 100+ events over 10+ days.
 
+**Categories beyond NFL (smoke tests, 2026-09-22):**
+
+- MLB: five games, briefs with concrete triggers, headline routing clean
+  (a roster move scored 0.95 for its game and 0.03-0.05 for the others).
+- Tech and crypto: briefs with scenarios and fair prices for standing
+  markets. Most crypto headlines are regulatory and scored ~0.9 political,
+  so the veto removes them. A sports-worded `concerns_event` scored Bitcoin
+  news at 0.43 for a Bitcoin market; reworded, 0.95
+  ([tools/probe_concerns.py](tools/probe_concerns.py)).
+- Weather: the LLM tiers returned the market's own price on every market
+  ($0.20), because nobody read the forecast. [weather.py](weather.py) now
+  compares the NWS forecast-implied band probability to the price, in code.
+  First day: SF tomorrow matched within 0.07 on every band; NYC "67-68"
+  was priced 0.50 vs 0.31 implied; Miami "88-89" 0.39 vs 0.19. Outcomes
+  arrive daily, so this is the fastest calibration data the project has.
+
 **Fast lane, first live game (Giants-Rams, 2026-09-21):**
 
 - 24 headlines judged, median Jev decision 412 ms for 15 questions.
@@ -240,11 +256,12 @@ is the open question.
 | [traces.py](traces.py) | What Tiers 2/3 believed, with `--backfill` and `--score` against the price they saw. |
 | **Fast lane** | |
 | [fastlane.py](fastlane.py) | **Shadow-only.** Jev reads headlines in ~300 ms against an LLM-written brief; prices are followed for 30 min. |
+| [weather.py](weather.py) | **Shadow-only, code only.** NWS forecast-implied probability vs the market, daily. No model: weather is arithmetic. |
 | **Shared** | |
 | [inplay.py](inplay.py) | Websocket feed and in-game experiments. |
 | [config.py](config.py) | Env loading, fail-fast validation. |
-| [tools/](tools/) | `probe_restricted.py`, `probe_fastlane.py`, `survey_tags.py`, `by_category.py`. |
-| [tests/](tests/) | 206 tests. No network, no keys; httpx is mocked at the transport layer. |
+| [tools/](tools/) | `probe_restricted.py`, `probe_fastlane.py`, `probe_dedup.py`, `probe_concerns.py`, `survey_tags.py`, `by_category.py`. |
+| [tests/](tests/) | 208 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
 | [docs/BRIEF.md](docs/BRIEF.md) | Design: the brief that gives Jev its information, and the loop that revises it. |
 | [docs/PROPOSALS.md](docs/PROPOSALS.md) | Question changes awaiting a human decision. |
@@ -255,7 +272,7 @@ is the open question.
 ```bash
 make setup                 # venv, deps, .env from the template
 # put your own keys in .env; it is gitignored. Never commit or paste it.
-make check                 # ruff + 206 tests, no network, no keys needed
+make check                 # ruff + 208 tests, no network, no keys needed
 python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 

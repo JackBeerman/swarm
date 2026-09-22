@@ -188,8 +188,13 @@ def normalize_market(
         "closes_at": (market.get("endDate") or ev.get("endDate")
                       or ev.get("endTime")),
         "settles_at": (market.get("endDate") or ev.get("endDate")),
-        "event_at": (ev.get("startTime") or market.get("gameStartTime")
-                     or market.get("startDate")),
+        # Verified 2026-09-22: a weather event's startTime is the START of
+        # its observation day, so a market mid-afternoon read as 14 hours
+        # past its event and slipped through. For climate the outcome is
+        # known when the window closes.
+        "event_at": (ev.get("endDate") if ev.get("category") == "climate" else None)
+                    or ev.get("startTime") or market.get("gameStartTime")
+                    or market.get("startDate"),
         "starts_at": ev.get("startTime") or market.get("startDate"),
         # Live game state. score/elapsed populate once play begins.
         # `period` is NOT sports-only: verified 2026-09-21, weather and

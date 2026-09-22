@@ -413,7 +413,7 @@ Return ONLY a JSON object, no prose, of this exact shape:
 Rules:
 - teams: the entities headlines will name (companies, products, artists, people), with the details that identify them. Up to 6 entities, up to 10 details each.
 - facts: 4-10 strings, each dated, each something a headline could later contradict.
-- scenarios: 4-8. Each trigger must be a specific event that either happens or does not (an official announcement, a release, a delay, a denial, a rival shipping first). For each scenario give your fair YES probability for EVERY market key listed above under "affects", including ones the trigger barely moves (repeat the current price for those).
+- scenarios: 4-8. Each trigger must be a specific event that either happens or does not (an official announcement, a release, a delay, a denial, a rival shipping first). NO trigger may depend on a government, legislature, regulator, court, election, or political figure: those headlines are never acted on, so a scenario built on them is dead weight. For each scenario give your fair YES probability for EVERY market key listed above under "affects", including ones the trigger barely moves (repeat the current price for those).
 - Never apologise or explain. If a search fails, use what you know. The reply must start with {{ and end with }}."""
 
 

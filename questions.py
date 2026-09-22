@@ -845,17 +845,38 @@ FASTLANE_HEADLINE_QUESTIONS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    # Measured 2026-09-22: the earlier wording asked about "a team or
+    # player taking part in `event`", and Jev read it literally -- Bitcoin
+    # news scored at most 0.43 for a Bitcoin price market. The subject of
+    # an event is whatever the market is about; `teams` lists the parties.
     "concerns_event": {
         "type": "noul",
         "instructions": {
-            "question": "Is `headline` about a team or player taking part in `event`?",
-            "inspect": "`headline.title`, `headline.summary` and `event`",
+            "question": "Is `headline` about the subject of `event`, or about a party listed in `teams`?",
+            "inspect": "`headline.title`, `headline.summary`, `event` and `teams`",
+            "focus": (
+                "The subject is what the event's markets settle on: a game's two teams "
+                "and their players, an asset's price, a product's release, an artist's "
+                "chart position. A story about something else that merely mentions the "
+                "subject in passing does not count."
+            ),
         },
         "criteria": {
-            "true": {"what": "Names one of the teams in `event`, or a player or coach on one of them"},
+            "true": {
+                "what": "Reports on the event's subject or a listed party",
+                "examples": [
+                    "event 'NY Giants vs LA Rams' <- 'Giants QB Jaxson Dart leaves game with knee injury'",
+                    "event 'How high will Bitcoin get this year?' <- 'Bitcoin falls 6% as spot ETF outflows hit record'",
+                    "event 'Gemini 3.5 Pro released by Sept 30?' <- 'Google says Gemini 3.5 enters public preview'",
+                ],
+            },
             "false": {
-                "what": "About other teams, other leagues, or the sport in general",
-                "not_for": "A headline that names both a team in `event` and other teams counts as true",
+                "what": "About other teams, other assets, other products, or the field in general",
+                "not_for": "A headline naming a listed party alongside others still counts as true",
+                "examples": [
+                    "event 'NY Giants vs LA Rams' <- 'Cardinals CB has neck injury'",
+                    "event 'How high will Bitcoin get this year?' <- 'Solana validator outage resolved'",
+                ],
             },
         },
     },
