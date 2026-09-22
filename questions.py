@@ -785,6 +785,40 @@ class GateThresholds:
 # a placeholder until fastlane.py --score has enough headlines to set it.
 
 FASTLANE_HEADLINE_QUESTIONS: dict[str, dict[str, Any]] = {
+    # Measured 2026-09-21: eight headlines on one QB injury, each
+    # re-flagging the same three markets over 35 minutes. A fact is acted
+    # on once. The recent acted headlines ride in the state as
+    # `already_acted`, and this is "select instead of generate": Jev says
+    # whether the new headline is one of them, code drops it if so.
+    "repeats_acted_fact": {
+        "type": "noul",
+        "instructions": {
+            "question": "Does `headline` report the same underlying fact as any item in `already_acted`?",
+            "inspect": "`headline.title`, `headline.summary` and `already_acted`",
+            "focus": (
+                "Same fact means the same event about the same person or team, even in "
+                "different words or with a small update. A genuinely new development is "
+                "not a repeat."
+            ),
+        },
+        "criteria": {
+            "true": {
+                "what": "A rewrite, follow-up, or minor update of a fact already listed",
+                "examples": [
+                    "already_acted: 'Dart goes down holding his knee' -> headline: 'Dart questionable to return with knee injury'",
+                    "already_acted: 'Nacua ruled out' -> headline: 'Rams WR Nacua will not play tonight'",
+                ],
+            },
+            "false": {
+                "what": "A different fact, or a material change to a listed one",
+                "not_for": "The same player with a new, different development",
+                "examples": [
+                    "already_acted: 'Dart questionable to return' -> headline: 'Dart returns to the game'",
+                    "already_acted: 'Dart hurts knee' -> headline: 'Nabers leaves with shoulder injury'",
+                ],
+            },
+        },
+    },
     "reports_new_fact": {
         "type": "noul",
         "instructions": {
@@ -913,3 +947,4 @@ class FastLaneThresholds:
     max_political: float = 0.12          # same ceiling as max_restricted
     min_effect_confidence: float = 0.50
     min_size: float = 1.0                # on the 0-2 Score
+    max_repeat: float = 0.50             # above this, the fact was already acted on

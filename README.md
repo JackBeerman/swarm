@@ -24,9 +24,10 @@ ways:
 
 ![Two lanes: Jev for savings and Jev for speed](docs/lanes.svg)
 
-**Status: infrastructure is well tested; edge is not demonstrated.** One real
-order has been placed and settled (2 shares, to prove the round trip).
-Everything else has run in shadow or paper mode. See
+**Status: infrastructure is well tested; edge is not demonstrated.** Four
+real orders have been placed, all tiny and manual: one to prove the round
+trip (won), three on a fast-lane signal (all lost, -$3.99). Everything else
+has run in shadow or paper mode. See
 [What we have measured](#what-we-have-measured) before drawing conclusions.
 
 ## Slow lane: the shape
@@ -193,9 +194,31 @@ Be careful with all of it.
   not markets**, and days, not events, when one slate shares a shock. A claim
   about strategy return needs roughly 100+ events over 10+ days.
 
+**Fast lane, first live game (Giants-Rams, 2026-09-21):**
+
+- 24 headlines judged, median Jev decision 412 ms for 15 questions.
+- Feed lag: median 15.6 min, fastest 1.9 min. The first headline on the
+  Giants' QB injury arrived 115 s after publication and Jev flagged it
+  correctly. The full-game spread then moved 0.53 -> 0.37 in the direction
+  Jev gave. That is one headline, one game: a reason to keep measuring, not
+  a finding.
+- The three period markets nearest 0.50 did not move a tick in 30 minutes
+  after any headline. Thin derivative books do not reprice on news; the
+  watchlist now takes full-game lines first.
+- Eight headlines on one injury each re-flagged the same markets. A
+  `repeats_acted_fact` Noul now recognises rewrites (0.88-0.93) against
+  genuinely new items (0.02-0.07); [tools/probe_dedup.py](tools/probe_dedup.py).
+- Three manual 3-share orders were placed on the fifth repeat, 17 minutes
+  after the first signal, because the operator-side log watch was buffering.
+  All three lost. Acting late on a fact the book has priced is the failure
+  mode the lag number predicts.
+- In aggregate, acted rows drifted no more than the control. Eight headlines
+  from one game say nothing either way.
+
 What the project can honestly claim today: the cheap tier works as a filter,
-the veto separates cleanly, and the plumbing is sound. Whether the gate picks
-markets where research beats the price is the open question.
+the veto separates cleanly, the fast path works end to end at ~400 ms, and
+the plumbing is sound. Whether either lane finds prices that lag information
+is the open question.
 
 ## Layout
 
@@ -217,7 +240,7 @@ markets where research beats the price is the open question.
 | [inplay.py](inplay.py) | Websocket feed and in-game experiments. |
 | [config.py](config.py) | Env loading, fail-fast validation. |
 | [tools/](tools/) | `probe_restricted.py`, `probe_fastlane.py`, `survey_tags.py`, `by_category.py`. |
-| [tests/](tests/) | 197 tests. No network, no keys; httpx is mocked at the transport layer. |
+| [tests/](tests/) | 201 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
 | [docs/BRIEF.md](docs/BRIEF.md) | Design: the brief that gives Jev its information, and the loop that revises it. |
 | [docs/PROPOSALS.md](docs/PROPOSALS.md) | Question changes awaiting a human decision. |
@@ -228,7 +251,7 @@ markets where research beats the price is the open question.
 ```bash
 make setup                 # venv, deps, .env from the template
 # put your own keys in .env; it is gitignored. Never commit or paste it.
-make check                 # ruff + 197 tests, no network, no keys needed
+make check                 # ruff + 201 tests, no network, no keys needed
 python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 

@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS signals (
     reports_new_fact  REAL,
     concerns_event    REAL,
     political         REAL,
+    repeat            REAL,             -- same fact as one already acted on
     effect            TEXT,             -- raises | lowers | no_clear_effect
     effect_conf       REAL,
     size              REAL,             -- 0-2 Score
@@ -136,6 +137,9 @@ def connect(path: str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    if "repeat" not in {r["name"] for r in conn.execute("PRAGMA table_info(signals)")}:
+        conn.execute("ALTER TABLE signals ADD COLUMN repeat REAL")
+        conn.commit()
     return conn
 
 
@@ -205,6 +209,19 @@ async def poll_feed(client: httpx.AsyncClient, source: str, url: str) -> list[di
 # watchlist
 # --------------------------------------------------------------------------
 
+_PERIOD_TOKENS = {"1h", "2h", "1q", "2q", "3q", "4q", "1p", "2p", "3p", "h1", "h2",
+                  "q1", "q2", "q3", "q4", "1st", "2nd", "3rd", "4th"}
+
+
+def is_period_market(market: dict[str, Any]) -> bool:
+    """A quarter/half/period line, as opposed to the full-game line."""
+    slug_tokens = set(str(market.get("slug") or "").lower().split("-"))
+    if slug_tokens & _PERIOD_TOKENS:
+        return True
+    text = f"{market.get('question') or ''} {market.get('outcome') or ''}".lower()
+    return any(w in text for w in ("half", "quarter", "1st period", "2nd period", "3rd period"))
+
+
 async def build_watchlist(
     pm: Any, tags: tuple[str, ...], start_window_hours: float, per_event: int,
 ) -> dict[str, dict[str, Any]]:
@@ -225,9 +242,14 @@ async def build_watchlist(
             continue                      # a price pinned at an extreme cannot show drift
         slot = by_event.setdefault(
             str(n.get("event_slug")), {"title": n.get("event_title"), "markets": []})
-        slot["markets"].append((abs(mid - 0.5), n))
+        # Full-game lines first. Measured 2026-09-21: the three period
+        # markets nearest 0.50 (2H, Q3, Q4 spreads) did not move a tick in
+        # 30 minutes after a starting QB left the game; the full-game
+        # spread moved 0.53 -> 0.37. Thin derivative books do not reprice
+        # on news, so watching them measures nothing.
+        slot["markets"].append((is_period_market(n), abs(mid - 0.5), n))
     for slot in by_event.values():
-        slot["markets"] = [n for _, n in sorted(slot["markets"], key=lambda t: t[0])[:per_event]]
+        slot["markets"] = [n for _, _, n in sorted(slot["markets"], key=lambda t: t[:2])[:per_event]]
     return {k: v for k, v in by_event.items() if v["markets"]}
 
 
@@ -299,6 +321,9 @@ def build_request(headline: dict[str, Any], event: dict[str, Any], model: str) -
             "headline": {"title": headline["title"], "summary": headline["summary"],
                          "source": headline["source"]},
             "event": event["title"],
+            # What this event has already acted on, newest first, so a
+            # rewrite of the same injury is recognised as a repeat.
+            "already_acted": list(event.get("already_acted") or [])[:8],
             # Who plays for whom. Without it the direction of an injury
             # headline is a guess. See build_brief().
             "teams": event.get("teams") or {},
@@ -313,6 +338,7 @@ def would_act(row: dict[str, Any], th: FastLaneThresholds) -> bool:
     """Every condition is a branch, not a product. See CLAUDE.md on multiplied factors."""
     return (
         row["political"] <= th.max_political
+        and row.get("repeat", 0.0) <= th.max_repeat
         and row["reports_new_fact"] >= th.min_new_fact
         and row["concerns_event"] >= th.min_concerns_event
         and row["effect"] in ("raises", "lowers")
@@ -335,6 +361,7 @@ def read_answers(body: dict[str, Any], n_markets: int) -> tuple[dict[str, float]
         "reports_new_fact": noul("reports_new_fact"),
         "concerns_event": noul("concerns_event"),
         "political": noul("headline_political"),
+        "repeat": noul("repeats_acted_fact"),
     }
     per_market = []
     for i in range(n_markets):
@@ -394,9 +421,9 @@ class Recorder:
 
         relevant = (head["concerns_event"] >= self.th.min_concerns_event
                     and head["political"] <= self.th.max_political)
-        log.info("%4.0fms  fact=%.2f event=%.2f pol=%.2f  %s  [%s]", ms,
+        log.info("%4.0fms  fact=%.2f event=%.2f pol=%.2f rep=%.2f  %s  [%s]", ms,
                  head["reports_new_fact"], head["concerns_event"], head["political"],
-                 h["title"][:70], h["source"])
+                 head["repeat"], h["title"][:70], h["source"])
         if not relevant:
             return                        # not our event: no quotes spent, nothing to follow
 
@@ -406,16 +433,20 @@ class Recorder:
             bbo = await self.quotes.bbo(m["slug"]) or {}
             cur = self.conn.execute(
                 "INSERT INTO signals (headline_id, at, event_slug, market_slug, question, outcome,"
-                " reports_new_fact, concerns_event, political, effect, effect_conf, size, acted,"
-                " jev_ms, model, bid0, ask0) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " reports_new_fact, concerns_event, political, repeat, effect, effect_conf,"
+                " size, acted, jev_ms, model, bid0, ask0)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (hid, datetime.now(timezone.utc).isoformat(), event_slug, m["slug"],
                  m.get("question"), m.get("outcome"), head["reports_new_fact"],
-                 head["concerns_event"], head["political"], pm_ans["effect"],
+                 head["concerns_event"], head["political"], head["repeat"], pm_ans["effect"],
                  pm_ans["effect_conf"], pm_ans["size"], int(acted), ms,
                  body.get("model"), bbo.get("bid"), bbo.get("ask")))
             self.conn.commit()
             if acted:
                 self.stats["acted"] += 1
+                acted_list = ev.setdefault("already_acted", [])
+                if h["title"] not in acted_list:
+                    acted_list.insert(0, h["title"][:120])
                 log.info("   WOULD ACT  %-7s size=%.2f conf=%.2f  %s / %s  @ %s/%s",
                          pm_ans["effect"], pm_ans["size"], pm_ans["effect_conf"],
                          (m.get("question") or "")[:40], (m.get("outcome") or "")[:24],

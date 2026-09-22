@@ -65,6 +65,7 @@ def _body(**over):
         "reports_new_fact": {"type": "noul", "noul": 0.96},
         "concerns_event": {"type": "noul", "noul": 0.98},
         "headline_political": {"type": "noul", "noul": 0.01},
+        "repeats_acted_fact": {"type": "noul", "noul": 0.03},
         "effect_0": {"type": "choice", "choice": "lowers", "confidence": 0.9},
         "size_0": {"type": "score", "score": 1.4, "confidence": 0.7},
     }
@@ -79,6 +80,7 @@ def test_read_answers_and_would_act():
 
 @pytest.mark.parametrize("over", [
     {"headline_political": {"type": "noul", "noul": 0.40}},
+    {"repeats_acted_fact": {"type": "noul", "noul": 0.90}},   # same injury, fifth headline
     {"reports_new_fact": {"type": "noul", "noul": 0.05}},      # a preview, not news
     {"concerns_event": {"type": "noul", "noul": 0.02}},        # another team
     {"effect_0": {"type": "choice", "choice": "no_clear_effect", "confidence": 0.9}},
@@ -139,3 +141,19 @@ def test_a_retitled_live_updates_item_counts_as_a_new_headline(tmp_path):
     assert rec._store_headline({**base, "title": "Live updates: pregame"}) is None
     assert rec._store_headline({**base, "title": "Live updates: Nacua ruled out"}) is not None
     conn.close()
+
+
+def test_full_game_lines_are_watched_before_period_lines():
+    """The period spreads nearest 0.50 never moved on a QB injury; the
+    full-game spread moved 0.16. Watch what reprices."""
+    assert fl.is_period_market({"slug": "asc-nfl-nyg-lar-2026-09-21-2h-pos-3pt5"})
+    assert fl.is_period_market({"slug": "x", "question": "Rams 1st half total points"})
+    assert not fl.is_period_market({"slug": "cks-nfl-nyg-lar-2026-09-21-nyg-1pt5",
+                                    "question": "Will the Giants cover 1.5?"})
+
+
+def test_acted_headlines_ride_in_the_state_for_dedup():
+    ev = {**EVENT, "already_acted": ["Dart goes down holding his knee"]}
+    req = fl.build_request(HEADLINE, ev, "jev-1.13.0")
+    assert req["state"]["already_acted"] == ["Dart goes down holding his knee"]
+    assert "repeats_acted_fact" in req["questions"]
