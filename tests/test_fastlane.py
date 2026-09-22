@@ -157,3 +157,47 @@ def test_acted_headlines_ride_in_the_state_for_dedup():
     req = fl.build_request(HEADLINE, ev, "jev-1.13.0")
     assert req["state"]["already_acted"] == ["Dart goes down holding his knee"]
     assert "repeats_acted_fact" in req["questions"]
+
+
+# --- scenario brief (v2) ---------------------------------------------------
+
+def test_clean_brief_keeps_only_well_formed_scenarios_for_watched_markets():
+    raw = {
+        "teams": {"Rams": ["Stafford (QB)"]},
+        "facts": ["Nacua questionable (ankle), 9/21", 42],
+        "scenarios": [
+            {"id": "Nacua Out!", "trigger": "Nacua ruled out",
+             "affects": {"m0": 0.41, "not-watched": 0.9, "m1": 1.7}},
+            {"id": "none_of_these", "trigger": "x", "affects": {"m0": 0.5}},   # reserved
+            {"id": "bad", "trigger": "no prices", "affects": {}},
+            "garbage",
+        ],
+    }
+    b = fl._clean_brief(raw, {"m0", "m1"})
+    assert b["facts"] == ["Nacua questionable (ankle), 9/21"]
+    assert len(b["scenarios"]) == 1
+    sc = b["scenarios"][0]
+    assert sc["id"] == "nacua_out_" and sc["affects"] == {"m0": 0.41}
+    assert b["written_at"]
+
+
+def test_scenario_questions_are_recognition_over_the_briefs_triggers():
+    from questions import fastlane_scenario_questions
+    q = fastlane_scenario_questions([{"id": "qb_out", "trigger": "Starting QB leaves injured"}])
+    assert set(q) == {"scenario", "contradicts_brief"}
+    assert set(q["scenario"]["criteria"]) == {"qb_out", "none_of_these"}
+    assert fastlane_scenario_questions([]) == {}
+
+
+def test_request_carries_the_brief_and_a_matched_scenario_prices_the_edge():
+    ev = {**EVENT, "brief": {"written_at": "t", "facts": ["f"],
+                             "scenarios": [{"id": "qb_out", "trigger": "QB out",
+                                            "affects": {"m0": 0.30}}]}}
+    req = fl.build_request(HEADLINE, ev, "jev-1.13.0")
+    assert "scenario" in req["questions"]
+    assert req["state"]["brief"]["scenarios"] == [{"id": "qb_out", "trigger": "QB out"}]
+    assert "affects" not in str(req["state"]), "prices never go to Jev"
+    body = _body(**{"scenario": {"type": "choice", "choice": "qb_out", "confidence": 0.9},
+                    "contradicts_brief": {"type": "noul", "noul": 0.02}})
+    head, _ = fl.read_answers(body, 1)
+    assert head["scenario"] == "qb_out" and head["contradicts"] == 0.02

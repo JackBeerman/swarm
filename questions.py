@@ -937,6 +937,52 @@ def fastlane_market_questions(i: int) -> dict[str, dict[str, Any]]:
     }
 
 
+def fastlane_scenario_questions(scenarios: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """
+    Recognition, not forecasting. The LLM wrote `scenarios` -- each a
+    trigger and a fair price per market -- BEFORE any headline. Jev says
+    which trigger, if any, the headline realises; code looks up the price.
+    This is where the fast lane stops needing a probability from anyone
+    at decision time. See docs/BRIEF.md.
+    """
+    if not scenarios:
+        return {}
+    criteria = {
+        sc["id"]: {"what": sc["trigger"]} for sc in scenarios if sc.get("id") and sc.get("trigger")
+    }
+    criteria["none_of_these"] = {
+        "what": "The headline does not realise any listed trigger",
+        "not_for": "A headline that clearly states one of the triggers has happened",
+    }
+    return {
+        "scenario": {
+            "type": "choice",
+            "instructions": {
+                "question": "Which trigger in `brief.scenarios`, if any, does `headline` report as having happened?",
+                "inspect": "`headline.title`, `headline.summary` and `brief.scenarios`",
+                "focus": (
+                    "Choose a trigger only if the headline says it has occurred or been "
+                    "decided. A trigger that is merely possible, rumoured, or 'questionable' "
+                    "has not happened."
+                ),
+            },
+            "criteria": criteria,
+        },
+        "contradicts_brief": {
+            "type": "noul",
+            "instructions": {
+                "question": "Does `headline` contradict any item in `brief.facts`?",
+                "inspect": "`headline.title`, `headline.summary` and `brief.facts`",
+            },
+            "criteria": {
+                "true": {"what": "The headline states something a listed fact says is otherwise",
+                         "examples": ["fact: 'Stafford will start' -> headline: 'Stafford inactive'"]},
+                "false": {"what": "Consistent with the listed facts, or about something they do not cover"},
+            },
+        },
+    }
+
+
 @dataclass(frozen=True)
 class FastLaneThresholds:
     # PLACEHOLDERS, unmeasured. They decide only which recorded rows are
@@ -948,3 +994,5 @@ class FastLaneThresholds:
     min_effect_confidence: float = 0.50
     min_size: float = 1.0                # on the 0-2 Score
     max_repeat: float = 0.50             # above this, the fact was already acted on
+    min_scenario_confidence: float = 0.60  # Choice confidence to trust a scenario match
+    max_contradiction: float = 0.50      # above this, stand down and re-brief

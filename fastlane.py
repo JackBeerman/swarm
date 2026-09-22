@@ -35,6 +35,7 @@ import argparse
 import asyncio
 import email.utils
 import html
+import json
 import logging
 import os
 import re
@@ -65,6 +66,7 @@ from questions import (  # noqa: E402
     FASTLANE_HEADLINE_QUESTIONS,
     FastLaneThresholds,
     fastlane_market_questions,
+    fastlane_scenario_questions,
     political_tag,
 )
 from search import (  # noqa: E402
@@ -114,6 +116,11 @@ CREATE TABLE IF NOT EXISTS signals (
     concerns_event    REAL,
     political         REAL,
     repeat            REAL,             -- same fact as one already acted on
+    scenario          TEXT,             -- brief scenario id Jev matched, or none_of_these
+    scenario_conf     REAL,
+    contradicts       REAL,
+    fair_yes          REAL,             -- the brief's pre-written price for that scenario
+    edge              REAL,             -- fair_yes - ask (YES) or bid - fair_yes (NO), in code
     effect            TEXT,             -- raises | lowers | no_clear_effect
     effect_conf       REAL,
     size              REAL,             -- 0-2 Score
@@ -127,6 +134,14 @@ CREATE TABLE IF NOT EXISTS signals (
     mid_30m           REAL
 );
 CREATE INDEX IF NOT EXISTS idx_sig_headline ON signals(headline_id);
+CREATE TABLE IF NOT EXISTS briefs (
+    id            INTEGER PRIMARY KEY,
+    written_at    TEXT NOT NULL,
+    event_slug    TEXT NOT NULL,
+    model         TEXT,
+    brief_json    TEXT NOT NULL,        -- teams, facts, scenarios: what Jev was shown
+    cost_usd      REAL
+);
 -- A "live updates" item keeps its URL and changes its title as news
 -- breaks (seen: Yahoo, 2026-09-21). Identity is URL + title.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_head_url_title ON headlines(url, title);
@@ -137,9 +152,12 @@ def connect(path: str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
-    if "repeat" not in {r["name"] for r in conn.execute("PRAGMA table_info(signals)")}:
-        conn.execute("ALTER TABLE signals ADD COLUMN repeat REAL")
-        conn.commit()
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(signals)")}
+    for col, typ in (("repeat", "REAL"), ("scenario", "TEXT"), ("scenario_conf", "REAL"),
+                     ("contradicts", "REAL"), ("fair_yes", "REAL"), ("edge", "REAL")):
+        if col not in have:
+            conn.execute(f"ALTER TABLE signals ADD COLUMN {col} {typ}")  # noqa: S608 -- constants
+    conn.commit()
     return conn
 
 
@@ -257,15 +275,31 @@ async def build_watchlist(
 # the brief -- the slow lane feeding the fast one
 # --------------------------------------------------------------------------
 
-_BRIEF_PROMPT = """Search the web for the CURRENT rosters and the latest injury report for this game: {event}.
+_BRIEF_PROMPT = """You are writing a pre-game brief that a fast classifier will read during the game. Search the web for the CURRENT rosters, the latest injury report and the weather for this game: {event}.
 
-Return ONLY a JSON object, no prose:
-{{"teams": {{"<full team name>": ["<player> (<position>)", ...], "<other team>": [...]}}}}
+The markets being watched, with the current YES price for each:
+{markets}
 
-List each team's most important players for betting purposes, up to 14: the starting quarterback first, then the top running backs, receivers, tight end, pass rushers and kicker. Prefer what the search results say; fill gaps from what you already know of these rosters. A PARTIAL LIST IS FINE AND EXPECTED. Include players who are injured or ruled out -- they are the ones headlines will name. Never apologise or explain: if you found only five names per team, return those five. The reply must start with {{ and end with }}."""
+Return ONLY a JSON object, no prose, of this exact shape:
+{{
+  "teams": {{"<full team name>": ["<player> (<position>)", ...], "<other team>": [...]}},
+  "facts": ["<one dated fact per string, e.g. 'Nacua listed questionable (ankle), 9/21 report'>", ...],
+  "scenarios": [
+    {{"id": "<short_snake_case>", "trigger": "<a concrete in-game development a headline could report, e.g. 'Giants starting QB leaves the game injured'>",
+      "affects": {{"<market key>": <fair YES probability 0-1>, ...}}}}
+  ]
+}}
+
+Rules:
+- teams: up to 14 players each, starting quarterback first, then key skill players, pass rushers, kicker. Include injured or doubtful players; they are the ones headlines name. A partial list is fine.
+- facts: 4-10 strings, each dated, each something a headline could later contradict.
+- scenarios: 4-8. Each trigger must be a specific event that either happens or does not (a player leaves injured, a player returns, a starter is ruled out pregame, a lead of 14+ at half, severe weather at kickoff). For each scenario give your fair YES probability for EVERY market key listed above under "affects", including ones the trigger barely moves (repeat the current price for those).
+- Never apologise or explain. If a search fails, use what you know. The reply must start with {{ and end with }}."""
 
 
-async def build_brief(client: httpx.AsyncClient, event_title: str) -> dict[str, list[str]]:
+async def build_brief(client: httpx.AsyncClient, event_title: str,
+                      markets: list[dict[str, Any]] | None = None,
+                      quotes: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """
     Who plays for whom, written by an LLM BEFORE any headline arrives.
 
@@ -277,7 +311,14 @@ async def build_brief(client: httpx.AsyncClient, event_title: str) -> dict[str, 
     LLM is slow and knows things, so it runs once, ahead of time; Jev is
     fast and reads what it is given, so it runs at the moment of news.
 
-    One searched Haiku call per event (~$0.02). Returns {} without a key
+    v2 (docs/BRIEF.md): the brief also carries dated `facts` and
+    `scenarios`, each with the LLM's fair YES price per watched market.
+    The only model-written probability in the fast lane is produced
+    here, offline, before any headline exists, so no headline can steer
+    it. Jev later recognises which scenario a headline realises; code
+    looks up the price.
+
+    One searched Haiku call per event (~$0.03). Returns {} without a key
     or on any failure, and the run continues with directions unreliable --
     which the log says loudly.
     """
@@ -289,9 +330,11 @@ async def build_brief(client: httpx.AsyncClient, event_title: str) -> dict[str, 
             ANTHROPIC_API_URL, timeout=90,
             headers={"x-api-key": key, "anthropic-version": ANTHROPIC_VERSION,
                      "content-type": "application/json"},
-            json={"model": SEARCH_MODEL, "max_tokens": 1500,
+            json={"model": SEARCH_MODEL, "max_tokens": 3000,
                   "messages": [{"role": "user",
-                                "content": _BRIEF_PROMPT.format(event=event_title)}],
+                                "content": _BRIEF_PROMPT.format(
+                                    event=event_title,
+                                    markets=_markets_block(markets or [], quotes or {}))}],
                   "tools": [{"type": WEB_SEARCH_TOOL, "name": "web_search", "max_uses": 3}]})
         r.raise_for_status()
         content = r.json().get("content")
@@ -299,12 +342,48 @@ async def build_brief(client: httpx.AsyncClient, event_title: str) -> dict[str, 
         if isinstance(content, list):
             text = "".join(b.get("text", "") for b in content
                            if isinstance(b, dict) and b.get("type") == "text")
-        teams = _loads_loose(text).get("teams") or {}
-        return {str(t): [str(x)[:60] for x in ps][:16]
-                for t, ps in teams.items() if isinstance(ps, list)}
+        raw = _loads_loose(text)
+        keys = {m["slug"] for m in (markets or [])}
+        return _clean_brief(raw, keys)
     except Exception as exc:  # noqa: BLE001 -- a failed brief degrades the run, it does not stop it
         log.warning("brief failed for %s: %s", event_title, exc)
         return {}
+
+
+def _markets_block(markets: list[dict[str, Any]], quotes: dict[str, dict[str, Any]]) -> str:
+    lines = []
+    for m in markets:
+        q = quotes.get(m["slug"]) or {}
+        mid = ((q["bid"] + q["ask"]) / 2) if q.get("bid") is not None and q.get("ask") is not None else None
+        lines.append(f'- key "{m["slug"]}": {m.get("question")} / YES = {m.get("outcome")}'
+                     f'  (current YES price {mid:.2f})' if mid is not None else
+                     f'- key "{m["slug"]}": {m.get("question")} / YES = {m.get("outcome")}')
+    return "\n".join(lines) or "- (none)"
+
+
+def _clean_brief(raw: Any, market_keys: set[str]) -> dict[str, Any]:
+    """Keep only what the schema promised; drop anything malformed rather than trusting it."""
+    if not isinstance(raw, dict):
+        return {}
+    teams = {str(t): [str(x)[:60] for x in ps][:16]
+             for t, ps in (raw.get("teams") or {}).items() if isinstance(ps, list)}
+    facts = [str(f)[:200] for f in (raw.get("facts") or []) if isinstance(f, str)][:10]
+    scenarios = []
+    seen: set[str] = set()
+    for sc in (raw.get("scenarios") or [])[:8]:
+        if not isinstance(sc, dict):
+            continue
+        sid = re.sub(r"[^a-z0-9_]", "_", str(sc.get("id") or "").lower())[:40]
+        trig = str(sc.get("trigger") or "")[:200]
+        affects = {}
+        for k, v in (sc.get("affects") or {}).items():
+            if k in market_keys and isinstance(v, (int, float)) and 0.0 <= v <= 1.0:
+                affects[k] = float(v)
+        if sid and trig and affects and sid not in seen and sid != "none_of_these":
+            seen.add(sid)
+            scenarios.append({"id": sid, "trigger": trig, "affects": affects})
+    return {"teams": teams, "facts": facts, "scenarios": scenarios,
+            "written_at": datetime.now(timezone.utc).isoformat()}
 
 
 # --------------------------------------------------------------------------
@@ -313,6 +392,8 @@ async def build_brief(client: httpx.AsyncClient, event_title: str) -> dict[str, 
 
 def build_request(headline: dict[str, Any], event: dict[str, Any], model: str) -> dict[str, Any]:
     questions = dict(FASTLANE_HEADLINE_QUESTIONS)
+    brief = event.get("brief") or {}
+    questions.update(fastlane_scenario_questions(brief.get("scenarios") or []))
     for i in range(len(event["markets"])):
         questions.update(fastlane_market_questions(i))
     return {
@@ -326,7 +407,12 @@ def build_request(headline: dict[str, Any], event: dict[str, Any], model: str) -
             "already_acted": list(event.get("already_acted") or [])[:8],
             # Who plays for whom. Without it the direction of an injury
             # headline is a guess. See build_brief().
-            "teams": event.get("teams") or {},
+            "teams": event.get("teams") or brief.get("teams") or {},
+            # Dated facts and pre-priced scenarios. Jev recognises; code prices.
+            "brief": {"written_at": brief.get("written_at"),
+                      "facts": brief.get("facts") or [],
+                      "scenarios": [{"id": sc["id"], "trigger": sc["trigger"]}
+                                    for sc in brief.get("scenarios") or []]},
             "markets": [{"question": m.get("question"), "outcome": m.get("outcome")}
                         for m in event["markets"]],
         },
@@ -363,6 +449,13 @@ def read_answers(body: dict[str, Any], n_markets: int) -> tuple[dict[str, float]
         "political": noul("headline_political"),
         "repeat": noul("repeats_acted_fact"),
     }
+    if "scenario" in a:
+        sc = a["scenario"]
+        if not isinstance(sc.get("choice"), str):
+            raise ValueError(f"malformed scenario: {sc!r}")
+        head["scenario"] = sc["choice"]
+        head["scenario_conf"] = float(sc.get("confidence") or 0.0)
+        head["contradicts"] = noul("contradicts_brief")
     per_market = []
     for i in range(n_markets):
         eff, size = a[f"effect_{i}"], a[f"size_{i}"]
@@ -427,30 +520,49 @@ class Recorder:
         if not relevant:
             return                        # not our event: no quotes spent, nothing to follow
 
+        matched = None
+        if (head.get("scenario") and head["scenario"] != "none_of_these"
+                and head.get("scenario_conf", 0.0) >= self.th.min_scenario_confidence
+                and head.get("contradicts", 0.0) <= self.th.max_contradiction):
+            matched = next((sc for sc in (ev.get("brief") or {}).get("scenarios") or []
+                            if sc["id"] == head["scenario"]), None)
+            if matched:
+                log.info("   SCENARIO %s (conf %.2f): %s", matched["id"],
+                         head["scenario_conf"], matched["trigger"][:60])
+
         for m, pm_ans in zip(ev["markets"], per_market, strict=True):
             row = {**head, **pm_ans}
             acted = would_act(row, self.th)
             bbo = await self.quotes.bbo(m["slug"]) or {}
+            fair = matched["affects"].get(m["slug"]) if matched else None
+            edge = None
+            if fair is not None and bbo.get("bid") is not None and bbo.get("ask") is not None:
+                # The number the slip would use, computed here and nowhere else.
+                edge = (fair - bbo["ask"]) if pm_ans["effect"] == "raises" else (bbo["bid"] - fair)
             cur = self.conn.execute(
                 "INSERT INTO signals (headline_id, at, event_slug, market_slug, question, outcome,"
                 " reports_new_fact, concerns_event, political, repeat, effect, effect_conf,"
-                " size, acted, jev_ms, model, bid0, ask0)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " size, acted, jev_ms, model, bid0, ask0, scenario, scenario_conf,"
+                " contradicts, fair_yes, edge)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (hid, datetime.now(timezone.utc).isoformat(), event_slug, m["slug"],
                  m.get("question"), m.get("outcome"), head["reports_new_fact"],
                  head["concerns_event"], head["political"], head["repeat"], pm_ans["effect"],
                  pm_ans["effect_conf"], pm_ans["size"], int(acted), ms,
-                 body.get("model"), bbo.get("bid"), bbo.get("ask")))
+                 body.get("model"), bbo.get("bid"), bbo.get("ask"),
+                 head.get("scenario"), head.get("scenario_conf"), head.get("contradicts"),
+                 fair, edge))
             self.conn.commit()
             if acted:
                 self.stats["acted"] += 1
                 acted_list = ev.setdefault("already_acted", [])
                 if h["title"] not in acted_list:
                     acted_list.insert(0, h["title"][:120])
-                log.info("   WOULD ACT  %-7s size=%.2f conf=%.2f  %s / %s  @ %s/%s",
+                log.info("   WOULD ACT  %-7s size=%.2f conf=%.2f  %s / %s  @ %s/%s%s",
                          pm_ans["effect"], pm_ans["size"], pm_ans["effect_conf"],
                          (m.get("question") or "")[:40], (m.get("outcome") or "")[:24],
-                         bbo.get("bid"), bbo.get("ask"))
+                         bbo.get("bid"), bbo.get("ask"),
+                         f"  fair={fair:.2f} edge={edge:+.3f}" if edge is not None else "")
             task = asyncio.create_task(self._follow(cur.lastrowid, m["slug"]))
             self.pending.add(task)
             task.add_done_callback(self.pending.discard)
@@ -494,10 +606,27 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
                 del watch[slug]
                 continue
             if brief:
-                ev["teams"] = await build_brief(client, ev["title"])
-            log.info("watching %s: %s (%d markets, brief: %s)", slug, ev["title"], len(live),
+                bq = {}
+                for m in live:
+                    bq[m["slug"]] = await quotes.bbo(m["slug"]) or {}
+                ev["brief"] = await build_brief(client, ev["title"], live, bq)
+                ev["teams"] = ev["brief"].get("teams") or {}
+                if ev["brief"]:
+                    with closing(connect()) as bconn:
+                        bconn.execute(
+                            "INSERT INTO briefs (written_at, event_slug, model, brief_json, cost_usd)"
+                            " VALUES (?,?,?,?,?)",
+                            (ev["brief"]["written_at"], slug, SEARCH_MODEL,
+                             json.dumps(ev["brief"]), 0.03))
+                        bconn.commit()
+            b = ev.get("brief") or {}
+            log.info("watching %s: %s (%d markets; brief: %s, %d facts, %d scenarios)",
+                     slug, ev["title"], len(live),
                      ", ".join(f"{t} x{len(ps)}" for t, ps in (ev.get("teams") or {}).items())
-                     or "NONE -- directions on player news are unreliable")
+                     or "NO ROSTER -- directions on player news are unreliable",
+                     len(b.get("facts") or []), len(b.get("scenarios") or []))
+            for sc in b.get("scenarios") or []:
+                log.info("   scenario %-24s %s", sc["id"][:24], sc["trigger"][:70])
         if not watch:
             log.error("no watched market has a tight enough book")
             return
