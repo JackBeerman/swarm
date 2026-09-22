@@ -100,18 +100,31 @@ class MarketFactSummary(BaseModel):
     chit-chat die here; only this crosses into Tier 3.
     """
 
+    # Length limits TRUNCATE; they do not reject. On the first paper run
+    # (2026-09-21) four of five evaluations were discarded because a
+    # gatherer wrote 450 characters into a 400-character field or a
+    # seventh key fact. The research was already paid for. A boundary
+    # that throws away what crossed it is a leak, not a boundary.
     role: GatherRole
-    identified_catalyst: str = Field(..., max_length=400)
-    historical_precedent: str = Field(..., max_length=400)
-    key_facts: list[str] = Field(default_factory=list, max_length=6)
-    contradicting_evidence: str | None = Field(None, max_length=400)
+    identified_catalyst: str
+    historical_precedent: str
+    key_facts: list[str] = Field(default_factory=list)
+    contradicting_evidence: str | None = None
     data_confidence: float = Field(..., ge=0.0, le=1.0)
-    sources: list[str] = Field(default_factory=list, max_length=6)
+    sources: list[str] = Field(default_factory=list)
 
-    @field_validator("key_facts")
+    @field_validator("identified_catalyst", "historical_precedent",
+                     "contradicting_evidence", mode="before")
     @classmethod
-    def _trim_facts(cls, v: list[str]) -> list[str]:
-        return [f[:200] for f in v]
+    def _clip_text(cls, v):
+        return v[:400] if isinstance(v, str) else v
+
+    @field_validator("key_facts", "sources", mode="before")
+    @classmethod
+    def _clip_list(cls, v):
+        if not isinstance(v, list):
+            return v
+        return [str(x)[:200] for x in v[:6]]
 
 
 # --------------------------------------------------------------------------
@@ -134,9 +147,19 @@ class TradeSignal(BaseModel):
         ..., ge=0.0, le=1.0,
         description="Astra's own calibration on `probability`. Modulates size.",
     )
-    reasoning: str = Field(..., max_length=800)
-    disqualifiers: list[str] = Field(default_factory=list, max_length=4)
+    reasoning: str
+    disqualifiers: list[str] = Field(default_factory=list)
     abstain: bool = False
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def _clip_reasoning(cls, v):
+        return v[:800] if isinstance(v, str) else v
+
+    @field_validator("disqualifiers", mode="before")
+    @classmethod
+    def _clip_disqualifiers(cls, v):
+        return [str(x)[:200] for x in v[:4]] if isinstance(v, list) else v
 
 
 class SizedOrder(BaseModel):

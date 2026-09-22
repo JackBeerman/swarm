@@ -1231,3 +1231,18 @@ async def test_second_prop_on_one_game_is_capped(monkeypatch):
     total = first.order.notional_usd + (second.order.notional_usd if second.order else 0.0)
     assert total <= 10.0 + 1e-9, "one event may hold at most 10% of bankroll"
     assert s.event_exposure["game"] == pytest.approx(total)
+
+
+async def test_overlong_model_output_is_clipped_not_discarded():
+    """
+    First paper run: 4 of 5 paid evaluations were thrown away because a
+    gatherer wrote 450 chars into a 400-char field. Clip, keep the research.
+    """
+    from schemas import MarketFactSummary, TradeSignal
+    f = MarketFactSummary(role=GatherRole.SLEUTH, identified_catalyst="x" * 900,
+                          historical_precedent="y", key_facts=["k"] * 9,
+                          data_confidence=0.5, sources=[])
+    assert len(f.identified_catalyst) == 400 and len(f.key_facts) == 6
+    t = TradeSignal(market_slug="m", side=Side.YES, probability=0.6, confidence=0.5,
+                    reasoning="r" * 2000, disqualifiers=["d"] * 7)
+    assert len(t.reasoning) == 800 and len(t.disqualifiers) == 4
