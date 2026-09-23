@@ -337,6 +337,26 @@ async def build_watchlist(
     return dict(ranked[:max_events])
 
 
+async def book_verdict(quotes: Any, slug: str, max_spread: float = 0.06,
+                       attempts: int = 3, pause: float = 35.0) -> tuple[str, dict[str, Any]]:
+    """
+    "tight", "wide", "one_sided", or "no_quote" -- never conflated.
+
+    A failed quote is retried after the shared block pause, because the
+    usual cause is a temporary Cloudflare block on the whole endpoint, not
+    anything about the market. Dropping it as illiquid hid exactly that.
+    """
+    for i in range(attempts):
+        bbo = await quotes.bbo(slug)
+        if bbo is not None:
+            if bbo.get("bid") is None or bbo.get("ask") is None:
+                return "one_sided", bbo
+            return ("tight" if bbo["ask"] - bbo["bid"] <= max_spread else "wide"), bbo
+        if i < attempts - 1:
+            await asyncio.sleep(pause)
+    return "no_quote", {}
+
+
 async def drop_restricted(jev: JevTriage, watch: dict[str, dict[str, Any]],
                           max_restricted: float = GateThresholds().max_restricted) -> None:
     """
@@ -722,14 +742,15 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
             await jev.aclose()
             return
         quotes = QuoteFetcher(pm, concurrency=2)
+        counts: dict[str, int] = {}
         for slug, ev in list(watch.items()):
             # The listed price can sit at 0.50 over an empty book (seen:
             # 0.01/0.99). A market that wide cannot show drift.
             live = []
             for m in ev["markets"]:
-                bbo = await quotes.bbo(m["slug"]) or {}
-                if (bbo.get("bid") is not None and bbo.get("ask") is not None
-                        and bbo["ask"] - bbo["bid"] <= 0.06):
+                verdict, bbo = await book_verdict(quotes, m["slug"])
+                counts[verdict] = counts.get(verdict, 0) + 1
+                if verdict == "tight":
                     live.append(m)
             ev["markets"] = live
             if not live:
@@ -750,6 +771,7 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
                              json.dumps(ev["brief"]), 0.03))
                         bconn.commit()
             b = ev.get("brief") or {}
+            log.info("books: %s", counts)
             log.info("watching %s: %s (%d markets; brief: %s, %d facts, %d scenarios)",
                      slug, ev["title"], len(live),
                      ", ".join(f"{t} x{len(ps)}" for t, ps in (ev.get("teams") or {}).items())
@@ -758,7 +780,9 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
             for sc in b.get("scenarios") or []:
                 log.info("   scenario %-24s %s", sc["id"][:24], sc["trigger"][:70])
         if not watch:
-            log.error("no watched market has a tight enough book")
+            # Say WHICH: 2026-09-22 the whole MLB slate was dropped as "not
+            # tight" when the quote endpoint was blocking us; the books were fine.
+            log.error("no watched market to follow: %s", counts)
             return
 
         with closing(connect()) as conn:

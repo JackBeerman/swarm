@@ -250,3 +250,20 @@ def test_scenario_score_measures_gap_closed_toward_the_briefs_price(tmp_path, ca
     cells = row.split()
     assert cells[3] == "+0.50" and cells[4] == "+1.00"
     assert cells[5] == "0.0900" and cells[6] == "0.2500"   # fair closer to the outcome
+
+
+async def test_a_blocked_quote_is_retried_and_never_read_as_a_wide_book():
+    """2026-09-22: a Cloudflare block emptied the MLB watchlist as 'not tight'."""
+    class Quotes:
+        def __init__(self, seq):
+            self.seq = list(seq)
+        async def bbo(self, slug):
+            return self.seq.pop(0)
+    v, _ = await fl.book_verdict(Quotes([None, {"bid": 0.48, "ask": 0.50}]), "m", pause=0)
+    assert v == "tight"
+    v, _ = await fl.book_verdict(Quotes([None, None, None]), "m", pause=0)
+    assert v == "no_quote"
+    v, _ = await fl.book_verdict(Quotes([{"bid": 0.30, "ask": 0.50}]), "m", pause=0)
+    assert v == "wide"
+    v, _ = await fl.book_verdict(Quotes([{"bid": None, "ask": 0.50}]), "m", pause=0)
+    assert v == "one_sided"
