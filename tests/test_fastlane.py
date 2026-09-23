@@ -267,3 +267,12 @@ async def test_a_blocked_quote_is_retried_and_never_read_as_a_wide_book():
     assert v == "wide"
     v, _ = await fl.book_verdict(Quotes([{"bid": None, "ask": 0.50}]), "m", pause=0)
     assert v == "one_sided"
+
+
+def test_game_lines_rank_ahead_of_props_and_empty_books_are_skipped():
+    """Padres-Dodgers: props listed 0.01/0.99 (mid exactly 0.50) were ranked first."""
+    assert fl.market_kind_rank({"slug": "aec-mlb-sd-lad-2026-09-22"}) == 0
+    assert fl.market_kind_rank({"slug": "astatc-mlb-sd-lad-2026-09-22-er-x-gte1"}) == 9
+    assert fl.listed_width({"outcomePrices": '["0.0100","0.9900"]'}) > 0.9
+    assert fl.listed_width({"outcomePrices": '["0.4500","0.4550"]'}) < 0.01
+    assert fl.listed_width({"outcomePrices": '["0.5000"]'}) == 0.0

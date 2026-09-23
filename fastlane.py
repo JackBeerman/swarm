@@ -288,6 +288,28 @@ async def poll_feed(client: httpx.AsyncClient, source: str, url: str) -> list[di
 # watchlist
 # --------------------------------------------------------------------------
 
+#: Slug prefix -> rank; lower is watched first. Measured on Padres-Dodgers
+#: 2026-09-22: moneyline (aec) and run line (asc) spreads 0.005, totals
+#: (tsc) 0.01, inning outcomes (atc) 0.01, player props (astatc, 360 of
+#: 415 markets) 0.98. The props' listed 0.01/0.99 averages to exactly
+#: 0.50, so "nearest 0.50" used to rank empty books first.
+KIND_RANK = {"aec": 0, "asc": 1, "cks": 1, "tsc": 2, "atc": 3}
+
+
+def market_kind_rank(market: dict[str, Any]) -> int:
+    return KIND_RANK.get(str(market.get("slug") or "").split("-")[0], 9)
+
+
+def listed_width(market: dict[str, Any]) -> float:
+    """Gap between the two listed prices; 0 when only one is listed."""
+    raw = market.get("outcomePrices")
+    try:
+        vals = [float(v) for v in (json.loads(raw) if isinstance(raw, str) else raw or [])][:2]
+    except (TypeError, ValueError):
+        return 1.0
+    return abs(vals[0] - vals[1]) if len(vals) == 2 else 0.0
+
+
 _PERIOD_TOKENS = {"1h", "2h", "1q", "2q", "3q", "4q", "1p", "2p", "3p", "h1", "h2",
                   "q1", "q2", "q3", "q4", "1st", "2nd", "3rd", "4th"}
 
@@ -328,6 +350,8 @@ async def build_watchlist(
         mid = listed_mid(market)
         if mid is None or not (0.15 <= mid <= 0.85):
             continue                      # a price pinned at an extreme cannot show drift
+        if listed_width(market) > 0.20:
+            continue                      # 0.01/0.99 is an empty book, not a 0.50 market
         slot = by_event.setdefault(
             str(n.get("event_slug")), {"title": n.get("event_title"), "markets": []})
         # Full-game lines first. Measured 2026-09-21: the three period
@@ -335,7 +359,7 @@ async def build_watchlist(
         # 30 minutes after a starting QB left the game; the full-game
         # spread moved 0.53 -> 0.37. Thin derivative books do not reprice
         # on news, so watching them measures nothing.
-        slot["markets"].append((is_period_market(n), abs(mid - 0.5), n))
+        slot["markets"].append(((market_kind_rank(n), is_period_market(n)), abs(mid - 0.5), n))
     for slot in by_event.values():
         slot["markets"] = [n for _, _, n in sorted(slot["markets"], key=lambda t: t[:2])[:per_event]]
     # Most markets nearest 0.50 first; standing-market tags list dozens of
