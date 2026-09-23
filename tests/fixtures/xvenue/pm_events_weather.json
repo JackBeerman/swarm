@@ -1,0 +1,314 @@
+{
+ "events": [
+  {
+   "id": "121739",
+   "slug": "temp-nychigh-2026-09-23",
+   "title": "Highest temperature in NYC on September 23?",
+   "category": "climate",
+   "startTime": "2026-09-23T05:00:00Z",
+   "endDate": "2026-09-23T23:59:00Z",
+   "period": "NS",
+   "seriesSlug": "weather-daily-high-nyc",
+   "tags": [
+    {
+     "slug": "weather",
+     "label": "Weather"
+    },
+    {
+     "slug": "daily",
+     "label": "Daily"
+    },
+    {
+     "slug": "high",
+     "label": "High"
+    },
+    {
+     "slug": "nyc",
+     "label": "NYC"
+    }
+   ],
+   "teams": [],
+   "markets": [
+    {
+     "id": "999187",
+     "slug": "tc-temp-nychigh-2026-09-23-gte67lt68f",
+     "question": "Highest temperature in NYC on September 23?",
+     "title": "67 to 68",
+     "description": "Will the highest temperature recorded at Central Park (KNYC) in New York City for 2026-09-23 as reported by the National Weather Service's Climatological Report (Daily) be between 67F and 68F? Outcome verified from NWS Climatological Report.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "futures",
+     "sportsMarketType": "futures",
+     "gameStartTime": "2026-09-23T05:00:00Z",
+     "endDate": "2026-09-24T09:00:00Z",
+     "bestBidQuote": {
+      "value": "0.5200",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.5300",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.5200\",\"0.5300\"]",
+     "marketSides": [
+      {
+       "id": "1997858",
+       "description": "Yes",
+       "long": true,
+       "price": "0.5200",
+       "quote": {
+        "value": "0.5300",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1997859",
+       "description": "No",
+       "long": false,
+       "price": "0.5300",
+       "quote": {
+        "value": "0.48",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "999186",
+     "slug": "tc-temp-nychigh-2026-09-23-gte65lt66f",
+     "question": "Highest temperature in NYC on September 23?",
+     "title": "65 to 66",
+     "description": "Will the highest temperature recorded at Central Park (KNYC) in New York City for 2026-09-23 as reported by the National Weather Service's Climatological Report (Daily) be between 65F and 66F? Outcome verified from NWS Climatological Report.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "futures",
+     "sportsMarketType": "futures",
+     "gameStartTime": "2026-09-23T05:00:00Z",
+     "endDate": "2026-09-24T09:00:00Z",
+     "bestBidQuote": {
+      "value": "0.3800",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.3900",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.3800\",\"0.3900\"]",
+     "marketSides": [
+      {
+       "id": "1997856",
+       "description": "Yes",
+       "long": true,
+       "price": "0.3800",
+       "quote": {
+        "value": "0.3900",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1997857",
+       "description": "No",
+       "long": false,
+       "price": "0.3900",
+       "quote": {
+        "value": "0.62",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "999188",
+     "slug": "tc-temp-nychigh-2026-09-23-gte69lt70f",
+     "question": "Highest temperature in NYC on September 23?",
+     "title": "69 to 70",
+     "description": "Will the highest temperature recorded at Central Park (KNYC) in New York City for 2026-09-23 as reported by the National Weather Service's Climatological Report (Daily) be between 69F and 70F? Outcome verified from NWS Climatological Report.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "futures",
+     "sportsMarketType": "futures",
+     "gameStartTime": "2026-09-23T05:00:00Z",
+     "endDate": "2026-09-24T09:00:00Z",
+     "bestBidQuote": {
+      "value": "0.0900",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.1400",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.0900\",\"0.1400\"]",
+     "marketSides": [
+      {
+       "id": "1997860",
+       "description": "Yes",
+       "long": true,
+       "price": "0.0900",
+       "quote": {
+        "value": "0.1400",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1997861",
+       "description": "No",
+       "long": false,
+       "price": "0.1400",
+       "quote": {
+        "value": "0.91",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "999185",
+     "slug": "tc-temp-nychigh-2026-09-23-lt65f",
+     "question": "Highest temperature in NYC on September 23?",
+     "title": "64 or below",
+     "description": "Will the highest temperature recorded at Central Park (KNYC) in New York City for 2026-09-23 as reported by the National Weather Service's Climatological Report (Daily) be less than or equal to 64F? Outcome verified from NWS Climatological Report.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "futures",
+     "sportsMarketType": "futures",
+     "gameStartTime": "2026-09-23T05:00:00Z",
+     "endDate": "2026-09-24T09:00:00Z",
+     "bestBidQuote": {
+      "value": "0.0200",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.0400",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.0200\",\"0.0400\"]",
+     "marketSides": [
+      {
+       "id": "1997854",
+       "description": "Yes",
+       "long": true,
+       "price": "0.0200",
+       "quote": {
+        "value": "0.0400",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1997855",
+       "description": "No",
+       "long": false,
+       "price": "0.0400",
+       "quote": {
+        "value": "0.98",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "999189",
+     "slug": "tc-temp-nychigh-2026-09-23-gte71lt72f",
+     "question": "Highest temperature in NYC on September 23?",
+     "title": "71 to 72",
+     "description": "Will the highest temperature recorded at Central Park (KNYC) in New York City for 2026-09-23 as reported by the National Weather Service's Climatological Report (Daily) be between 71F and 72F? Outcome verified from NWS Climatological Report.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "futures",
+     "sportsMarketType": "futures",
+     "gameStartTime": "2026-09-23T05:00:00Z",
+     "endDate": "2026-09-24T09:00:00Z",
+     "bestBidQuote": {
+      "value": "0.0100",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.0300",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.0100\",\"0.0300\"]",
+     "marketSides": [
+      {
+       "id": "1997862",
+       "description": "Yes",
+       "long": true,
+       "price": "0.0100",
+       "quote": {
+        "value": "0.0300",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1997863",
+       "description": "No",
+       "long": false,
+       "price": "0.0300",
+       "quote": {
+        "value": "0.99",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "999190",
+     "slug": "tc-temp-nychigh-2026-09-23-gte73f",
+     "question": "Highest temperature in NYC on September 23?",
+     "title": "73 or above",
+     "description": "Will the highest temperature recorded at Central Park (KNYC) in New York City for 2026-09-23 as reported by the National Weather Service's Climatological Report (Daily) be greater than or equal to 73F? Outcome verified from NWS Climatological Report.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "futures",
+     "sportsMarketType": "futures",
+     "gameStartTime": "2026-09-23T05:00:00Z",
+     "endDate": "2026-09-24T09:00:00Z",
+     "bestAskQuote": {
+      "value": "0.0200",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.0200\"]",
+     "marketSides": [
+      {
+       "id": "1997864",
+       "description": "Yes",
+       "long": true,
+       "price": "0.0200",
+       "quote": {
+        "value": "0.0200",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1997865",
+       "description": "No",
+       "long": false
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

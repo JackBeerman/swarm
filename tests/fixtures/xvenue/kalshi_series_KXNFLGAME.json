@@ -1,0 +1,23 @@
+{
+ "series": {
+  "ticker": "KXNFLGAME",
+  "title": "Professional Football Game",
+  "category": "Sports",
+  "categories": [
+   "Sports"
+  ],
+  "tags": [
+   "Football"
+  ],
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "settlement_sources": [
+   {
+    "name": "the Governing League",
+    "url": "https://www.nfl.com/"
+   }
+  ],
+  "contract_terms_url": "https://assets.kalshi.com/contract_terms/FOOTBALLGAMEWIN.pdf",
+  "frequency": "custom"
+ }
+}

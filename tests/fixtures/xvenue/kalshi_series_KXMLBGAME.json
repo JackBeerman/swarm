@@ -1,0 +1,31 @@
+{
+ "series": {
+  "ticker": "KXMLBGAME",
+  "title": "Professional Baseball Game",
+  "category": "Sports",
+  "categories": [
+   "Sports"
+  ],
+  "tags": [
+   "Baseball"
+  ],
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 0.5,
+  "settlement_sources": [
+   {
+    "name": "ESPN",
+    "url": "https://www.espn.com"
+   },
+   {
+    "name": "Fox Sports",
+    "url": "https://www.foxsports.com"
+   },
+   {
+    "name": "the Governing League",
+    "url": "https://www.mlb.com/"
+   }
+  ],
+  "contract_terms_url": "https://assets.kalshi.com/contract_terms/BASEBALLGAMEWIN.pdf",
+  "frequency": "custom"
+ }
+}
