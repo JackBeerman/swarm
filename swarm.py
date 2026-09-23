@@ -35,6 +35,7 @@ from pydantic import ValidationError
 
 from adapters import derive_notionals, game_state
 from fees import fee_per_share
+import models as _models
 from questions import (
     GateThresholds,
     StructuralLimits,
@@ -555,6 +556,40 @@ _apply_gate = apply_gate
 
 
 # ==========================================================================
+# Model routing hook -- the only coupling to models.py
+# ==========================================================================
+#
+# Which model each Tier 2/3 call uses is looked up per role. With no routing
+# configuration (no SWARM_ROUTING_PROFILE, SWARM_ROUTING_FILE or
+# SWARM_ROUTE_<ROLE> in the environment), resolve_model() returns the
+# default passed in -- TIER2_MODEL / TIER3_MODEL -- and _route_kwargs() is
+# empty, so every request is what it was before the registry existed. A
+# malformed override raises inside the caller's try block: that evaluation
+# spends nothing and logs why, rather than quietly running on a model
+# nobody chose. Fallback chains are NOT used here yet. docs/ROUTING.md.
+
+_GATHER_ROUTE: dict[GatherRole, str] = {
+    GatherRole.SLEUTH: "gatherer_sleuth",
+    GatherRole.QUANT: "gatherer_historian",
+    GatherRole.RED_TEAM: "gatherer_red_team",
+}
+
+
+def _route(role: str, default: str) -> str:
+    return _models.resolve_model(role, default)
+
+
+def _route_kwargs(model: str) -> dict[str, Any]:
+    if not _models.is_configured():
+        return {}
+    return _models.call_kwargs(model)
+
+
+def _registry_price(model: str, input_tokens: int, output_tokens: int) -> float:
+    return _models.price_usd(model, input_tokens, output_tokens)
+
+
+# ==========================================================================
 # Tier 2 -- gatherer swarm
 # ==========================================================================
 
@@ -629,14 +664,16 @@ async def _run_gatherer(
     ]
 
     try:
+        model = _route(_GATHER_ROUTE[role], TIER2_MODEL)   # routing hook
         first = await acompletion(
-            model=TIER2_MODEL,
+            model=model,
             messages=messages,
             tools=[search_tool],
-            **sampling_kwargs(TIER2_MODEL, 0.3),
+            **sampling_kwargs(model, 0.3),
+            **_route_kwargs(model),
             max_tokens=900,
         )
-        costs.append(_cost_of(first, "gather", TIER2_MODEL))
+        costs.append(_cost_of(first, "gather", model))
 
         msg = first.choices[0].message
         tool_calls = getattr(msg, "tool_calls", None) or []
@@ -654,12 +691,13 @@ async def _run_gatherer(
                     }
                 )
             second = await acompletion(
-                model=TIER2_MODEL,
+                model=model,
                 messages=messages,
-                **sampling_kwargs(TIER2_MODEL, 0.3),
+                **sampling_kwargs(model, 0.3),
+                **_route_kwargs(model),
                 max_tokens=900,
             )
-            costs.append(_cost_of(second, "gather", TIER2_MODEL))
+            costs.append(_cost_of(second, "gather", model))
             raw = second.choices[0].message.content
         else:
             raw = msg.content
@@ -725,13 +763,15 @@ async def _synthesize(
         "reports": [f.model_dump(mode="json") for f in facts],
     }
     try:
+        model = _route("synthesis", TIER3_MODEL)   # routing hook
         resp = await acompletion(
-            model=TIER3_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": _SYNTH_SYSTEM},
                 {"role": "user", "content": json.dumps(payload, default=str)},
             ],
-            **sampling_kwargs(TIER3_MODEL, 0.1),
+            **sampling_kwargs(model, 0.1),
+            **_route_kwargs(model),
             # Claude Opus 5.5 thinks by default, and thinking tokens count
             # against max_tokens. At the original 1200 the reasoning could
             # consume the whole budget and truncate the JSON -- which is
@@ -740,7 +780,7 @@ async def _synthesize(
             # declining. This is a ceiling, not a spend.
             max_tokens=4000,
         )
-        costs.append(_cost_of(resp, "synthesize", TIER3_MODEL))
+        costs.append(_cost_of(resp, "synthesize", model))
         if getattr(resp.choices[0], "finish_reason", None) == "length":
             log.warning("synthesis hit max_tokens on %s -- answer truncated; "
                         "this is NOT the model abstaining", state.get("slug"))
@@ -1151,10 +1191,19 @@ def _cost_of(resp: Any, stage: str, model: str) -> StageCost:
         except Exception:
             log.debug("could not price a %s call on %s", stage, model)
     usage = getattr(resp, "usage", None)
+    tok_in = getattr(usage, "prompt_tokens", 0) or 0
+    tok_out = getattr(usage, "completion_tokens", 0) or 0
+    if usd == 0.0 and (tok_in or tok_out):
+        # Routing hook, part 2. litellm prices a model only if its cost map
+        # knows it; a newly listed open model comes back as $0.00, and a
+        # $0.00 spend never reaches the kill switch. Fall back to the
+        # registry's price (0.0 for a model the registry does not list).
+        # Not reached for the default models, which litellm prices.
+        usd = _registry_price(model, tok_in, tok_out)
     return StageCost(
         stage=stage,  # type: ignore[arg-type]
         model=model,
         usd=usd,
-        input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-        output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        input_tokens=tok_in,
+        output_tokens=tok_out,
     )
