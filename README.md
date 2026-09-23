@@ -257,26 +257,37 @@ is the open question.
 | --- | --- |
 | [questions.py](questions.py) | **The experiment.** Every Jev question, threshold and structural limit, for both lanes. |
 | **Slow lane** | |
-| [swarm.py](swarm.py) | Jev client, gate, gatherers, synthesis, sizing, per-event exposure cap. |
-| [adapters.py](adapters.py) | Normalizes `polymarket_us` wire shapes. Do not bypass. |
+| [swarm.py](swarm.py) | Jev client, gate, gatherers, synthesis, sizing (net of fees), per-event exposure cap. |
+| [adapters.py](adapters.py) | Normalizes `polymarket_us` wire shapes. `yes_side()` reads what YES actually pays. Do not bypass. |
 | [schemas.py](schemas.py) | Pydantic contracts between tiers. |
 | [shadow.py](shadow.py) | Triage-only collector, settlement backfill, scoring, calibration. **Start here.** |
 | [daemon.py](daemon.py) | Entry point. Triages everything, researches the best few. The only place an order can be created. |
 | [risk_engine.py](risk_engine.py) | NLV, cost ledger, kill switch. |
-| [search.py](search.py) | Web search for Tier 2 (Anthropic server tool). |
+| [fees.py](fees.py) | The exchange fee, fitted to the account's real fills. Every sizer and scanner reads it. |
+| [search.py](search.py) | Web search for Tier 2 (Anthropic server tool, cited source text). |
+| [skills.py](skills.py), [skills/](skills/) | Per-family playbooks (NFL, MLB, AI releases, charts, crypto ladders, weather), selected in code. |
+| [models.py](models.py) | Role-to-model registry and routing (defaults unchanged; open models opt-in). [docs/ROUTING.md](docs/ROUTING.md). |
 | [traces.py](traces.py) | What Tiers 2/3 believed, with `--backfill` and `--score` against the price they saw. |
 | **Fast lane** | |
-| [fastlane.py](fastlane.py) | **Shadow-only.** Jev reads headlines in ~300 ms against an LLM-written brief; prices are followed for 30 min. |
-| [weather.py](weather.py) | **Shadow-only, code only.** NWS forecast-implied probability vs the market, daily. No model: weather is arithmetic. |
+| [fastlane.py](fastlane.py) | **Shadow-only.** Jev recognises which pre-priced scenario a headline or game event realises; code compares the brief's price with the book. |
+| [sources.py](sources.py) | Faster inputs than RSS: MLB live game feed (~30 s), NWS alerts and observations, Bluesky, GitHub. `--fast-sources`. |
+| **Priced in code** | |
+| [weather.py](weather.py) | NWS forecast-implied band probability vs the market. |
+| [weather_ensemble.py](weather_ensemble.py) | ECMWF, GFS, ICON and WeatherNext 2 ensembles via Open-Meteo, scored side by side. |
+| [arb.py](arb.py) | Complete-set arbitrage on provably exhaustive ladders (weather bands). |
+| [reference.py](reference.py) | Sharp sportsbook prices, de-vigged, as a fair value for game lines. Inert without `ODDS_API_KEY`. |
+| **Measurement** | |
+| [closer.py](closer.py) | Closing line value: the pre-start price, captured every ~10 minutes. |
+| [paper.py](paper.py) | Each lane replayed into its own $100 with the live sizing rules, fees and caps. |
+| [run_daily.py](run_daily.py) | The whole shadow routine once, with a lock and a guard against stray processes. `--print-schedule`. |
 | **Shared** | |
 | [inplay.py](inplay.py) | Websocket feed and in-game experiments. |
 | [config.py](config.py) | Env loading, fail-fast validation. |
-| [dashboard/ledger.html](dashboard/ledger.html) | The shared results page (real and paper bets, Jev on the news, calibration, weather). Hosted on claude.ai; data pushed from `tools/dashboard_export.py`. |
-| [tools/](tools/) | `probe_restricted.py`, `probe_fastlane.py`, `probe_dedup.py`, `probe_concerns.py`, `survey_tags.py`, `by_category.py`. |
-| [tests/](tests/) | 210 tests. No network, no keys; httpx is mocked at the transport layer. |
+| [dashboard/ledger.html](dashboard/ledger.html) | The shared results page. Hosted on claude.ai; data pushed from `tools/dashboard_export.py`. |
+| [tools/](tools/) | Probes (`probe_restricted`, `probe_fastlane`, `probe_dedup`, `probe_concerns`, `probe_mlb_events`), `bench_roles`, `measure_sources`, `survey_tags`, `by_category`, `fix_inverted_spreads`. |
+| [tests/](tests/) | 410 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
-| [docs/BRIEF.md](docs/BRIEF.md) | Design: the brief that gives Jev its information, and the loop that revises it. |
-| [docs/PROPOSALS.md](docs/PROPOSALS.md) | Question changes awaiting a human decision. |
+| [docs/](docs/) | [BRIEF.md](docs/BRIEF.md) (how Jev gets its information), [AGENTS.md](docs/AGENTS.md) (roles), [ROUTING.md](docs/ROUTING.md), [PROPOSALS.md](docs/PROPOSALS.md) (changes awaiting a human). |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, where changes go, and what needs evidence. |
 
 ## Setup
@@ -284,7 +295,7 @@ is the open question.
 ```bash
 make setup                 # venv, deps, .env from the template
 # put your own keys in .env; it is gitignored. Never commit or paste it.
-make check                 # ruff + 328 tests, no network, no keys needed
+make check                 # ruff + 410 tests, no network, no keys needed
 python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 
@@ -362,12 +373,12 @@ Enforced in code and tests; see [CLAUDE.md](CLAUDE.md) for the full list.
 ## Not built yet
 
 - Event-scoped fact cache, so 30 props on one game share one search.
-- Scheduled daily collection across categories. This is what produces a
-  sample large enough to mean anything.
 - Fast-lane order path. Deliberately absent until `fastlane.py --score`
-  shows drift that beats the spread over several days.
-- A learning loop over resolved markets. Designed, deliberately not built:
-  it needs thousands of resolved markets across many days first.
+  and closing line value show an edge that beats the spread over days.
+- A learning loop that drafts skill and question edits from scored
+  records (roles designed in docs/AGENTS.md; a human applies every edit).
+- Scheduled runs are ready (`run_daily.py --print-schedule`) but not
+  registered: the operator decides when the machine runs them.
 
 ## Contributing
 
