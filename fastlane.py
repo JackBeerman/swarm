@@ -78,6 +78,7 @@ from search import (  # noqa: E402
     WEB_SEARCH_TOOL,
 )
 from swarm import JevTriage, _loads_loose  # noqa: E402
+import skills as _skills  # noqa: E402
 
 log = logging.getLogger("fastlane")
 
@@ -473,7 +474,7 @@ Rules:
 async def build_brief(client: httpx.AsyncClient, event_title: str,
                       markets: list[dict[str, Any]] | None = None,
                       quotes: dict[str, dict[str, Any]] | None = None,
-                      sport: bool = True) -> dict[str, Any]:
+                      sport: bool = True, use_skills: bool = True) -> dict[str, Any]:
     """
     Who plays for whom, written by an LLM BEFORE any headline arrives.
 
@@ -500,16 +501,23 @@ async def build_brief(client: httpx.AsyncClient, event_title: str,
     if not key:
         return {}
     try:
+        body: dict[str, Any] = {
+            "model": SEARCH_MODEL, "max_tokens": 3000,
+            "messages": [{"role": "user",
+                          "content": (_BRIEF_PROMPT if sport else _BRIEF_PROMPT_GENERAL).format(
+                              event=event_title,
+                              markets=_markets_block(markets or [], quotes or {}))}],
+            "tools": [{"type": WEB_SEARCH_TOOL, "name": "web_search", "max_uses": 3}]}
+        # Skills hook: a family playbook as the system prompt, identical for
+        # every event of that family. No match -> no key -> today's request.
+        playbook = _skills.brief_block(markets or []) if use_skills else ""
+        if playbook:
+            body["system"] = playbook
         r = await client.post(
             ANTHROPIC_API_URL, timeout=90,
             headers={"x-api-key": key, "anthropic-version": ANTHROPIC_VERSION,
                      "content-type": "application/json"},
-            json={"model": SEARCH_MODEL, "max_tokens": 3000,
-                  "messages": [{"role": "user",
-                                "content": (_BRIEF_PROMPT if sport else _BRIEF_PROMPT_GENERAL).format(
-                                    event=event_title,
-                                    markets=_markets_block(markets or [], quotes or {}))}],
-                  "tools": [{"type": WEB_SEARCH_TOOL, "name": "web_search", "max_uses": 3}]})
+            json=body)
         r.raise_for_status()
         content = r.json().get("content")
         text = ""
