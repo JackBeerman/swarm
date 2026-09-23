@@ -36,6 +36,7 @@ from pydantic import ValidationError
 from adapters import derive_notionals, game_state
 from fees import fee_per_share
 import models as _models
+import skills as _skills
 from questions import (
     GateThresholds,
     StructuralLimits,
@@ -656,9 +657,12 @@ async def _run_gatherer(
     messages: list[dict[str, Any]] = [
         {
             "role": "system",
+            # Skills hook: "" for a market no playbook matches, so the
+            # prompt is exactly what it was. Appended, so the role text
+            # stays a fixed prefix. See skills.py.
             "content": _GATHER_SYSTEM.format(
                 role=role.value, brief=ROLE_BRIEFS[role]
-            ),
+            ) + _skills.gatherer_block(state),
         },
         {"role": "user", "content": json.dumps(state, default=str)},
     ]

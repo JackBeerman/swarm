@@ -74,3 +74,53 @@ ordinary word. Proposed rename in `_model_state` only: `question`->`market_title
 
 The full proposed question dicts are in the audit report; ask Claude to
 regenerate them against the current `questions.py` before applying.
+
+## 6. Skills and roles (2026-09-23, docs/AGENTS.md)
+
+`skills.py` and `skills/` are in place: seven playbooks, selected in code and
+injected only where one matches. Unmatched markets get byte-identical prompts
+(tested). These follow-ups need a decision:
+
+a. **Weather skips Tier 2/3 entirely.** `skills.research_allowed(market)` is
+   False for `tc-temp`. Today the playbook only tells the gatherers not to
+   search; each weather escalation still pays for three gatherer calls and
+   synthesis. Proposed: in `Swarm.research`, halt with `priced_in_code` before
+   the budget check when `research_allowed` is False. That is a pipeline
+   change, so it is not made here.
+b. **Crypto ladders to code, like weather.** A touch or range probability from
+   spot, time left and implied volatility is arithmetic. The `price_ladders`
+   playbook limits research to one spot/volatility query in the meantime.
+   Measure first: compare the ladder's prices to a lognormal with DVOL on
+   stored `cpc` markets. Unmeasured.
+c. **MLB wording in the fast-lane questions (questions.py, not applied).**
+   Every example in `effect_{i}` and `size_{i}` is NFL ("starting
+   quarterback ruled out"). The MLB analogue of the decisive factor is "the
+   starting pitcher is scratched" and "a regular is out of the lineup".
+   Proposed: add one MLB example to `size_{i}` level 2 signals and one to
+   `effect_{i}.lowers`. Probe on MLB headlines before and after (a new
+   `probe_fastlane` case set). Adding examples recalibrates the Score.
+d. **The lesson_drafter output format** in docs/AGENTS.md ("Skill edit" block,
+   with >= 10 events over >= 3 days to mark a line measured). Needs the
+   operator's agreement before anything is drafted against it.
+e. **Stored-brief audit, MLB 2026-09-22 (fastlane.db, 7 briefs).** 18 of 58
+   facts were season-long absences, 4 of 47 scenarios were pregame or weather
+   triggers, 7 were improbable early blowouts and 7 were one player's stat line.
+   These numbers are in the MLB skill. Re-count on briefs written with the
+   skill before claiming it helped.
+f. **One A/B brief, Blue Jays vs Orioles, 2026-09-22 (Haiku 4.5, same
+   markets and prices, one run each).**
+   - Without the skill: 8 facts, 7 scenarios. No probable starter was named
+     (a scenario guessed "Yesavage starts"), 2 facts were long-term IL, and
+     the weather was given for Toronto without saying where the game is played.
+   - With the skill: 5 facts, 5 scenarios. Both probable starters were named
+     and dated (the fact the skill ranks first), there were no season-long IL
+     facts, and Cease was reported as skipping his start.
+   - The scenarios did not improve. Two were 14-run blowouts, which the skill
+     says not to write, and one of them was priced **on the wrong side**:
+     "Baltimore builds a 14-run lead" set Toronto -1.5 to 0.98 and the Toronto
+     moneyline to 0.05.
+   One run each is an anecdote, and a model reads a prompt instruction as
+   advice. Proposed, in code: `_clean_brief` drops a scenario whose prices
+   break the ladder for one team, P(-1.5) <= P(win) <= P(+1.5). Those prices
+   are read from `yes_team` and the line, so this is arithmetic, not a
+   question. Not applied, because it changes which scenarios survive.
