@@ -260,6 +260,7 @@ is the open question.
 | **Shared** | |
 | [inplay.py](inplay.py) | Websocket feed and in-game experiments. |
 | [config.py](config.py) | Env loading, fail-fast validation. |
+| [dashboard/ledger.html](dashboard/ledger.html) | The shared results page (real and paper bets, Jev on the news, calibration, weather). Hosted on claude.ai; data pushed from `tools/dashboard_export.py`. |
 | [tools/](tools/) | `probe_restricted.py`, `probe_fastlane.py`, `probe_dedup.py`, `probe_concerns.py`, `survey_tags.py`, `by_category.py`. |
 | [tests/](tests/) | 210 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |

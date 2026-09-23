@@ -1,0 +1,334 @@
+<title>Swarm Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#F4F7F5; --surface:#FFFFFF; --sunk:#EAEFEC; --ink:#17201C; --muted:#5B6862; --faint:#8A968F;
+  --line:#D6DED9; --accent:#0F7A5C; --accent-soft:#DCEFE7;
+  --win:#1A7F37; --win-soft:#DAF3E0; --loss:#B42318; --loss-soft:#FBE3E0; --wait:#8A5A00; --wait-soft:#FBF0D5;
+  --display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0E1412; --surface:#151D1A; --sunk:#1B2521; --ink:#E4ECE8; --muted:#9AABA3; --faint:#6F7F77;
+    --line:#27332E; --accent:#3CC596; --accent-soft:#16352A;
+    --win:#4CC06A; --win-soft:#15311E; --loss:#F0776A; --loss-soft:#3A1A17; --wait:#E3B341; --wait-soft:#33290F;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0E1412; --surface:#151D1A; --sunk:#1B2521; --ink:#E4ECE8; --muted:#9AABA3; --faint:#6F7F77;
+  --line:#27332E; --accent:#3CC596; --accent-soft:#16352A;
+  --win:#4CC06A; --win-soft:#15311E; --loss:#F0776A; --loss-soft:#3A1A17; --wait:#E3B341; --wait-soft:#33290F;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font:15px/1.55 var(--body);padding-inline:16px;padding-block:28px 56px}
+.wrap{max-width:1080px;margin:0 auto;display:grid;gap:36px}
+h1,h2{font-family:var(--display);margin:0;text-wrap:balance}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em}
+h2{font-size:20px;font-weight:600}
+.num,td.n,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.eyebrow{font:600 11px/1 var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+p{margin:0;max-width:68ch}
+.muted{color:var(--muted)}
+
+header{display:grid;gap:10px}
+.head-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 20px}
+.stamp{font:13px var(--mono);color:var(--muted)}
+.lede{color:var(--muted)}
+
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.cell{background:var(--surface);padding:16px 18px;display:grid;gap:6px}
+.cell .v{font:500 26px/1.1 var(--mono);font-variant-numeric:tabular-nums}
+.cell .s{font-size:12.5px;color:var(--muted)}
+.pos{color:var(--win)} .neg{color:var(--loss)}
+
+section{display:grid;gap:14px}
+.sec-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.note{font-size:13px;color:var(--muted)}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th{font:600 11px/1.2 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--sunk);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;white-space:nowrap}
+.sub{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.pill{display:inline-block;font:600 11px/1 var(--body);letter-spacing:.06em;text-transform:uppercase;padding:5px 8px;border-radius:999px;white-space:nowrap}
+.pill.won{background:var(--win-soft);color:var(--win)}
+.pill.lost{background:var(--loss-soft);color:var(--loss)}
+.pill.open{background:var(--wait-soft);color:var(--wait)}
+.pill.lane{background:var(--accent-soft);color:var(--accent)}
+.pill.plain{background:var(--sunk);color:var(--muted)}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 13px var(--body);border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:6px 12px;border-radius:999px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.chip:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);gap:18px}
+@media (max-width:760px){.split{grid-template-columns:1fr}}
+.stat-list{display:grid;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;align-content:start}
+.stat-list div{background:var(--surface);padding:12px 16px;display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.stat-list b{font:500 18px var(--mono);font-variant-numeric:tabular-nums}
+.stream{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);max-height:420px;overflow:auto}
+.stream li{padding:10px 14px;border-bottom:1px solid var(--line);display:grid;gap:4px}
+.stream li:last-child{border-bottom:0}
+.stream .meta{display:flex;flex-wrap:wrap;gap:6px 14px;font:12px var(--mono);color:var(--muted)}
+.stream .t{font-size:14px}
+.stream .acted .t{font-weight:600}
+
+.chart{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:14px}
+.chart svg{display:block;width:100%;height:auto;max-width:100%}
+.empty{padding:22px;text-align:center;color:var(--muted)}
+.banner{border:1px solid var(--line);border-left:3px solid var(--wait);background:var(--surface);border-radius:8px;padding:12px 14px;font-size:14px}
+footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Polymarket US · $100 treasury · Jev + Claude</div>
+    <div class="head-row">
+      <h1>Swarm Ledger</h1>
+      <span class="stamp" id="stamp">Loading…</span>
+    </div>
+    <p class="lede">Every real order the account has placed, every paper bet the two lanes would have made, and how fast Jev read the news. Small numbers: read the sample sizes before the results.</p>
+    <div class="banner" id="nodata" hidden>Results load from this page's shared data, which is only available when the page is opened on claude.ai.</div>
+  </header>
+
+  <div class="strip" id="strip" aria-label="Account summary"></div>
+
+  <section aria-labelledby="h-real">
+    <div class="sec-head">
+      <h2 id="h-real">Real bets</h2>
+      <span class="note">From the exchange's own ledger. Net includes fees.</span>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Placed</th><th>Market</th><th>Source</th><th class="n">Shares</th><th class="n">Price</th><th class="n">Fees</th><th>Result</th><th class="n">Net</th></tr></thead>
+      <tbody id="real"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="h-paper">
+    <div class="sec-head">
+      <h2 id="h-paper">Paper bets</h2>
+      <div class="chips" role="group" aria-label="Filter by lane">
+        <button class="chip" id="f-all" data-lane="all" aria-pressed="true">All</button>
+        <button class="chip" id="f-slow" data-lane="slow" aria-pressed="false">Slow lane</button>
+        <button class="chip" id="f-fast" data-lane="fast" aria-pressed="false">Fast lane</button>
+      </div>
+    </div>
+    <p class="note">Slow lane: Jev triage, then Claude research; a bet is only sized if the edge clears the bar. Fast lane: Jev reads a headline against a pre-written brief; one paper position per market, entered at the quoted price when the signal fired, 1 share.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>When</th><th>Lane</th><th>Market</th><th>Call</th><th class="n">Price</th><th class="n">Drift +30m</th><th>Result</th><th class="n">P&amp;L / share</th></tr></thead>
+      <tbody id="paper"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="h-fast">
+    <div class="sec-head">
+      <h2 id="h-fast">Jev on the news</h2>
+      <span class="note">Every headline judged, newest first. Bold = the fast lane would have acted.</span>
+    </div>
+    <div class="split">
+      <div class="stat-list" id="faststats"></div>
+      <ul class="stream" id="stream"><li class="empty">Loading…</li></ul>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-cal">
+    <div class="sec-head">
+      <h2 id="h-cal">Is the price right?</h2>
+      <span class="note">Settled markets by price band: what the market said vs how often it happened.</span>
+    </div>
+    <div class="chart" id="cal"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section aria-labelledby="h-wx">
+    <div class="sec-head">
+      <h2 id="h-wx">Weather: forecast vs market</h2>
+      <span class="note">NWS forecast turned into a probability per temperature band, beside the market's price. Settles daily.</span>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Station</th><th>Day</th><th class="n">Forecast</th><th>Band</th><th class="n">Forecast says</th><th class="n">Market says</th><th class="n">Gap</th><th>Result</th></tr></thead>
+      <tbody id="wx"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <footer>Paper bets place no orders. Real bets are tiny manual tests. Nothing here is a demonstrated edge until it holds across many events and days.</footer>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const state = { summary: null, real: [], paper: [], feed: null, cal: null, wx: null, lane: "all" };
+
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const money = (v, signed) => v == null ? "—" : (signed && v > 0 ? "+" : v < 0 ? "−" : "") + "$" + Math.abs(v).toFixed(2);
+  const px = (v) => v == null ? "—" : v.toFixed(2);
+  const sgn = (v, d = 2) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(d);
+  const tone = (v) => v == null ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "";
+  const when = (iso) => { if (!iso) return "—"; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); };
+  const pill = (text, cls) => el("span", "pill " + cls, text);
+  const result = (res) => res === "1" ? pill("yes", "won") : res === "0" ? pill("no", "lost") : pill("open", "open");
+  const td = (content, cls) => { const c = el("td", cls); if (content instanceof Node) c.append(content); else c.textContent = content ?? "—"; return c; };
+  const empty = (tbody, cols, text) => { tbody.replaceChildren(); const r = el("tr"); const c = el("td", "empty", text); c.colSpan = cols; r.append(c); tbody.append(r); };
+  const withSub = (main, sub) => { const f = document.createDocumentFragment(); f.append(document.createTextNode(main || "—")); if (sub) f.append(el("span", "sub", sub)); return f; };
+
+  function renderStrip() {
+    const s = state.summary; const strip = $("strip"); strip.replaceChildren();
+    if (!s) return;
+    const cells = [
+      ["Deposited", money(s.deposits_usd), ""],
+      ["Cash now", money(s.cash_usd), "exchange balance"],
+      ["Real net", money(s.real_net_usd, true), `${s.real_orders} orders · ${s.real_won} won · ${s.real_lost} lost`, tone(s.real_net_usd)],
+      ["Fees paid", money(s.real_fees_usd), "charged per order"],
+      ["Research spend", money(s.research_usd), "Claude tiers, paper runs"],
+      ["Jev decision", s.jev_ms_median != null ? s.jev_ms_median + " ms" : "—", `median, ${s.headlines_total ?? 0} headlines`],
+    ];
+    for (const [k, v, sub, t] of cells) {
+      const c = el("div", "cell"); c.append(el("div", "eyebrow", k)); c.append(el("div", "v num " + (t || ""), v)); if (sub) c.append(el("div", "s", sub)); strip.append(c);
+    }
+    $("stamp").textContent = "Updated " + when(s.updated_at);
+  }
+
+  function renderReal() {
+    const tb = $("real"); if (!state.real.length) return empty(tb, 8, "No real orders yet.");
+    tb.replaceChildren();
+    for (const r of [...state.real].sort((a, b) => (b.placed_at || "").localeCompare(a.placed_at || ""))) {
+      const tr = el("tr");
+      tr.append(td(when(r.placed_at)), td(withSub(r.label, r.note)), td(pill(r.source, r.source.startsWith("Fast") ? "lane" : "plain")),
+        td(r.shares != null ? String(r.shares) : "—", "n"), td(px(r.avg_price), "n"), td(money(r.fees_usd), "n"),
+        td(pill(r.status, r.status)), td(money(r.net_usd, true), "n " + tone(r.net_usd)));
+      tb.append(tr);
+    }
+  }
+
+  function renderPaper() {
+    const tb = $("paper");
+    const rows = state.paper.filter(p => state.lane === "all" || p.lane === state.lane).sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+    if (!rows.length) return empty(tb, 8, state.paper.length ? "Nothing in this lane yet." : "No paper bets yet.");
+    tb.replaceChildren();
+    for (const p of rows) {
+      const tr = el("tr");
+      const sub = p.lane === "fast" ? p.headline : (p.halted ? p.halted.replace(/_/g, " ") : (p.sized ? `sized ${p.sized}` : ""));
+      tr.append(td(when(p.at)), td(pill(p.lane === "fast" ? "fast" : "slow", "lane")), td(withSub(p.label, sub)),
+        td(p.call || "no call"), td(px(p.lane === "fast" ? p.entry : p.ask), "n"),
+        td(sgn(p.drift_30m), "n " + tone(p.drift_30m)), td(result(p.resolved)), td(sgn(p.pnl_per_share), "n " + tone(p.pnl_per_share)));
+      tb.append(tr);
+    }
+  }
+
+  function renderFeed() {
+    const f = state.feed; const st = $("faststats"); st.replaceChildren();
+    const s = state.summary || {};
+    const rows = [
+      ["Jev decision, median", f?.jev_ms_median != null ? f.jev_ms_median + " ms" : "—"],
+      ["Feed lag, median", f?.lag_median_min != null ? f.lag_median_min + " min" : "—"],
+      ["Feed lag, fastest", f?.lag_fastest_min != null ? f.lag_fastest_min + " min" : "—"],
+      ["Headlines judged", f?.headlines_total ?? "—"],
+      ["Fast paper positions", `${s.paper_fast ?? 0} (${s.paper_fast_settled ?? 0} settled)`],
+      ["Fast paper P&L", s.paper_fast_pnl_per_share != null ? sgn(s.paper_fast_pnl_per_share) + " / share" : "—"],
+    ];
+    for (const [k, v] of rows) { const d = el("div"); d.append(el("span", "muted", k), el("b", null, String(v))); st.append(d); }
+    const ul = $("stream"); ul.replaceChildren();
+    const hs = f?.headlines || [];
+    if (!hs.length) { ul.append(el("li", "empty", "No headlines judged yet.")); return; }
+    for (const h of hs) {
+      const li = el("li", h.acted ? "acted" : "");
+      li.append(el("div", "t", h.title));
+      const m = el("div", "meta");
+      m.append(el("span", null, when(h.at)), el("span", null, h.source), el("span", null, (h.jev_ms ?? "—") + " ms"),
+        el("span", null, "fact " + (h.fact ?? "—")), el("span", null, "our event " + (h.event ?? "—")));
+      if (h.lag_min != null) m.append(el("span", null, "lag " + h.lag_min + " min"));
+      li.append(m); ul.append(li);
+    }
+  }
+
+  function renderCal() {
+    const box = $("cal"); box.replaceChildren();
+    const bands = state.cal?.bands || [];
+    if (!bands.length) { box.append(el("div", "empty", "Nothing settled yet.")); return; }
+    const W = 640, H = 300, L = 48, R = 16, T = 16, B = 44;
+    const x = v => L + v * (W - L - R), y = v => T + (1 - v) * (H - T - B);
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Market price against how often the outcome happened, by price band");
+    const add = (tag, attrs, text) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text != null) n.textContent = text; svg.append(n); return n; };
+    const css = getComputedStyle(document.documentElement);
+    const c = (v) => css.getPropertyValue(v).trim();
+    for (const t of [0, .25, .5, .75, 1]) {
+      add("line", { x1: x(0), x2: x(1), y1: y(t), y2: y(t), stroke: c("--line"), "stroke-width": 1 });
+      add("text", { x: L - 8, y: y(t) + 4, "text-anchor": "end", fill: c("--muted"), "font-size": 11, "font-family": "IBM Plex Mono, monospace" }, Math.round(t * 100) + "%");
+      add("text", { x: x(t), y: H - B + 18, "text-anchor": "middle", fill: c("--muted"), "font-size": 11, "font-family": "IBM Plex Mono, monospace" }, Math.round(t * 100) + "%");
+    }
+    add("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", fill: c("--muted"), "font-size": 12 }, "Market price");
+    add("line", { x1: x(0), y1: y(0), x2: x(1), y2: y(1), stroke: c("--faint"), "stroke-dasharray": "4 4", "stroke-width": 1 });
+    const maxM = Math.max(...bands.map(b => b.markets));
+    for (const b of bands) {
+      const r = 4 + 10 * Math.sqrt(b.markets / maxM);
+      const col = b.won >= b.priced ? c("--win") : c("--loss");
+      add("line", { x1: x(b.priced), x2: x(b.priced), y1: y(b.priced), y2: y(b.won), stroke: col, "stroke-width": 2 });
+      const dot = add("circle", { cx: x(b.priced), cy: y(b.won), r, fill: col, "fill-opacity": .85 });
+      const t = document.createElementNS(NS, "title"); t.textContent = `${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%: priced ${(b.priced * 100).toFixed(1)}%, happened ${(b.won * 100).toFixed(1)}% · ${b.markets} markets, ${b.events} events`; dot.append(t);
+    }
+    box.append(svg);
+    const legend = el("p", "note");
+    legend.textContent = `${state.cal.markets} settled markets. Dot size = markets in the band; distance from the dashed line = how wrong the price was. Almost all from two NFL days, so a gap here is a hypothesis, not a finding. Hover a dot for events.`;
+    box.append(legend);
+  }
+
+  function renderWx() {
+    const tb = $("wx"); const rows = state.wx?.rows || [];
+    if (!rows.length) return empty(tb, 8, "No weather comparisons yet.");
+    tb.replaceChildren();
+    const names = { nychigh: "NYC · Central Park", laxhigh: "Los Angeles · LAX", sfohigh: "San Francisco · SFO", miahigh: "Miami · MIA", mdwhigh: "Chicago · Midway" };
+    for (const r of rows) {
+      const band = r.band_lo == null ? `${r.band_hi}°F or below` : r.band_hi == null ? `${r.band_lo}°F or above` : `${r.band_lo}–${r.band_hi}°F`;
+      const gap = r.p_model - r.market_mid;
+      const tr = el("tr");
+      tr.append(td(names[r.city] || r.city), td(r.target_date), td(r.forecast_high != null ? r.forecast_high + "°F" : "—", "n"), td(band),
+        td((r.p_model * 100).toFixed(0) + "%", "n"), td((r.market_mid * 100).toFixed(0) + "%", "n"),
+        td(sgn(gap), "n " + (Math.abs(gap) >= .15 ? tone(gap) : "")), td(result(r.resolved_outcome)));
+      tb.append(tr);
+    }
+  }
+
+  function renderAll() { renderStrip(); renderReal(); renderPaper(); renderFeed(); renderCal(); renderWx(); }
+
+  for (const b of document.querySelectorAll(".chip")) {
+    b.addEventListener("click", () => {
+      state.lane = b.dataset.lane;
+      for (const o of document.querySelectorAll(".chip")) o.setAttribute("aria-pressed", String(o === b));
+      renderPaper();
+    });
+  }
+
+  const theme = new MutationObserver(renderCal);
+  theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", renderCal);
+
+  (async () => {
+    const db = window.claude?.use ? await window.claude.use("db") : null;
+    if (!db) {
+      $("nodata").hidden = false; $("stamp").textContent = "No data in this view";
+      for (const id of ["real", "paper", "wx"]) empty($(id), 8, "Open on claude.ai to load results.");
+      $("stream").replaceChildren(el("li", "empty", "Open on claude.ai to load results."));
+      $("cal").replaceChildren(el("div", "empty", "Open on claude.ai to load results."));
+      return;
+    }
+    const onErr = () => { $("stamp").textContent = "Data unavailable right now"; };
+    db.doc("summary/current").onSnapshot(s => { state.summary = s.exists ? s.data() : null; renderStrip(); renderFeed(); }, onErr);
+    db.doc("feed/recent").onSnapshot(s => { state.feed = s.exists ? s.data() : null; renderFeed(); }, onErr);
+    db.doc("calibration/nfl").onSnapshot(s => { state.cal = s.exists ? s.data() : null; renderCal(); }, onErr);
+    db.doc("weather/latest").onSnapshot(s => { state.wx = s.exists ? s.data() : null; renderWx(); }, onErr);
+    db.collection("real").onSnapshot(q => { state.real = q.docs.map(d => d.data()); renderReal(); }, onErr);
+    db.collection("paper").onSnapshot(q => { state.paper = q.docs.map(d => d.data()); renderPaper(); }, onErr);
+  })();
+})();
+</script>
