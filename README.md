@@ -26,7 +26,8 @@ ways:
 
 **Status: infrastructure is well tested; edge is not demonstrated.** Four
 real orders have been placed, all tiny and manual: one to prove the round
-trip (won), three on a fast-lane signal (all lost, -$3.99). Everything else
+trip (won), three on a fast-lane signal (all lost, -$3.99; placed on the wrong side
+of a correct signal -- see below). Everything else
 has run in shadow or paper mode. See
 [What we have measured](#what-we-have-measured) before drawing conclusions.
 
@@ -228,6 +229,16 @@ Be careful with all of it.
 - Eight headlines on one injury each re-flagged the same markets. A
   `repeats_acted_fact` Noul now recognises rewrites (0.88-0.93) against
   genuinely new items (0.02-0.07); [tools/probe_dedup.py](tools/probe_dedup.py).
+- **The three real losses were a data bug, not a bad signal.** On underdog
+  ("pos") spread markets the exchange's title names the other team, and on
+  NFL its settlement text does too; YES actually pays the underdog plus the
+  line (verified by settling the ladder: game "pos 0.5" NO, "pos 33.5" YES on
+  a 28-6 final). The adapter read the title, so Jev's correct call ("the QB
+  injury hurts the Giants") was placed as YES on Giants +3.5. The Rams covered
+  both the 2nd half and the 3rd quarter. `adapters.yes_side()` now reads what
+  YES pays from the exchange's structured side; 82 recorded signals were
+  corrected with `tools/fix_inverted_spreads.py`. Moneyline titles also named
+  no side at all; they now read "<team> wins".
 - Three manual 3-share orders were placed on the fifth repeat, 17 minutes
   after the first signal, because the operator-side log watch was buffering.
   All three lost. Acting late on a fact the book has priced is the failure
@@ -273,7 +284,7 @@ is the open question.
 ```bash
 make setup                 # venv, deps, .env from the template
 # put your own keys in .env; it is gitignored. Never commit or paste it.
-make check                 # ruff + 210 tests, no network, no keys needed
+make check                 # ruff + 328 tests, no network, no keys needed
 python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 

@@ -521,3 +521,53 @@ def test_main_lines_first_orders_by_closeness_to_half():
     assert out[0] in ("total-39.5", "winner-1q")
     assert out.index("tt-21.5") > out.index("sacks-3.5")
     assert len(out) == 5
+
+
+# --- what YES pays on: the structured side, never the title ----------------
+
+def _mkt(slug, title, question, desc, long_desc, team, short_desc="x", short_team="Other"):
+    return {"slug": slug, "title": title, "question": question, "description": desc,
+            "marketSides": [{"long": True, "description": long_desc, "team": {"name": team} if team else None},
+                            {"long": False, "description": short_desc, "team": {"name": short_team}}]}
+
+
+def test_underdog_spread_reads_the_yes_side_not_the_inverted_title():
+    """
+    Giants-Rams 2026-09-21, final 6-28: 'pos 0.5' settled NO and 'pos 33.5'
+    YES, so YES = Giants + line. The title and the settlement text named the
+    Rams, and three real orders were placed on the wrong side because of it.
+    """
+    m = _mkt("asc-nfl-nyg-lar-2026-09-21-2h-pos-3pt5", "Los Angeles Rams wins by over 3.5 points",
+             "Will the New York Giants cover 3.5 vs the Los Angeles Rams?",
+             "This market will settle to Yes if Los Angeles Rams outscores New York Giants by more than 3.5",
+             "+3.50", "New York Giants", "-3.50", "Los Angeles Rams")
+    n = normalize_market(m, {"slug": "nfl-nyg-lar-2026-09-21", "title": "NY Giants vs LA Rams"})
+    assert n["outcome"] == "New York Giants +3.5"
+    assert n["side_text_conflict"] is True
+    assert n["description"].startswith("Resolves YES if New York Giants covers +3.5")
+    assert n["description_raw"].startswith("This market will settle to Yes if Los Angeles Rams")
+    assert n["title_raw"] == "Los Angeles Rams wins by over 3.5 points"
+
+
+def test_moneyline_names_the_team_yes_pays_on():
+    m = _mkt("aec-mlb-tor-bal-2026-09-23", "Toronto Blue Jays vs Baltimore Orioles",
+             "Who will win?", "settles to the winner", "Toronto Blue Jays", "Toronto Blue Jays")
+    n = normalize_market(m)
+    assert n["outcome"] == "Toronto Blue Jays wins" and n["outcome_kind"] == "moneyline"
+
+
+def test_agreeing_favourite_spread_and_totals_keep_their_meaning():
+    fav = normalize_market(_mkt("asc-mlb-tor-bal-2026-09-23-neg-1pt5", "Toronto Blue Jays wins by over 1.5 runs",
+                                "q", "Yes if the Blue Jays cover -1.5", "-1.50", "Toronto Blue Jays"))
+    assert fav["outcome"] == "Toronto Blue Jays -1.5" and fav["side_text_conflict"] is False
+    assert fav["description"] == "Yes if the Blue Jays cover -1.5"
+    tot = normalize_market(_mkt("tsc-mlb-tor-bal-2026-09-23-f5-2pt5", "Over 2.5 total runs in first 5 innings",
+                                "q", "d", "Over", None))
+    assert tot["outcome"] == "Over 2.5 total runs in first 5 innings" and tot["outcome_kind"] == "total"
+
+
+def test_yes_no_legs_and_markets_without_sides_keep_the_title():
+    wx = normalize_market(_mkt("tc-temp-nychigh-2026-09-23-gte67lt68f", "67 to 68", "q", "d", "Yes", None))
+    assert wx["outcome"] == "67 to 68" and wx["outcome_kind"] == "other"
+    bare = normalize_market({"slug": "s", "title": "Over", "question": "q"})
+    assert bare["outcome"] == "Over"

@@ -39,12 +39,13 @@ OUT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / ".dashboard")
 NOTES = {
     "phi-ten-2026-09-20-total-24pt5": ("Round-trip test", "Eagles vs Titans: over 24.5 total points",
                                        "First live order, to prove the order path end to end."),
-    "nyg-lar-2026-09-21-2h-pos-3pt5": ("Fast-lane signal, manual", "Giants vs Rams: Rams win 2nd half by 3.5+",
-                                       "Giants QB injury headline. Placed 17 min after the first signal."),
-    "nyg-lar-2026-09-21-3q-pos-1pt5": ("Fast-lane signal, manual", "Giants vs Rams: Rams win 3rd quarter by 1.5+",
-                                       "Same headline. Period markets did not reprice on the news."),
-    "nyg-lar-2026-09-21-4q-pos-1pt5": ("Fast-lane signal, manual", "Giants vs Rams: Rams win 4th quarter by 1.5+",
-                                       "Same headline."),
+    "nyg-lar-2026-09-21-2h-pos-3pt5": ("Fast-lane signal, wrong side", "Giants vs Rams: Giants +3.5, 2nd half",
+                                       "Jev said the Giants QB injury hurt the Giants (right: the Rams covered). "
+                                       "The exchange title named the Rams, so YES was bought on the Giants. Fixed 9/23."),
+    "nyg-lar-2026-09-21-3q-pos-1pt5": ("Fast-lane signal, wrong side", "Giants vs Rams: Giants +1.5, 3rd quarter",
+                                       "Same headline, same inverted title. The Rams covered; NO would have won."),
+    "nyg-lar-2026-09-21-4q-pos-1pt5": ("Fast-lane signal, wrong side", "Giants vs Rams: Giants +1.5, 4th quarter",
+                                       "Same headline, same inverted title."),
 }
 
 
@@ -245,6 +246,18 @@ def research_spend() -> float:
     return round(sum(r[0] or 0 for r in t.execute("SELECT cost_usd FROM evaluations")), 2) if t else 0.0
 
 
+def clv_and_equity() -> list[tuple[str, str, dict]]:
+    """
+    `clv/summary` (closer.py) and `equity/<lane>` (paper.py). Both read the
+    lane databases read-only and compute fresh; neither touches the exchange.
+    """
+    import closer
+    import paper
+    docs = [("clv", "summary", closer.report_data())]
+    docs += [("equity", lane, paper.equity_doc(res)) for lane, res in paper.build().items()]
+    return docs
+
+
 def main() -> None:
     real, acct = asyncio.run(real_bets())
     paper = paper_bets()
@@ -274,6 +287,7 @@ def main() -> None:
             ("calibration", "nfl", cal), ("weather", "latest", wx)]
     docs += [("real", r["id"], r) for r in real]
     docs += [("paper", p["id"], p) for p in paper]
+    docs += clv_and_equity()
     manifest = []
     for coll, did, body in docs:
         p = OUT / coll / f"{did}.json"
