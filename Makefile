@@ -1,4 +1,4 @@
-.PHONY: setup test lint check shadow backfill analyze sweep score calibrate probe fastlane fastlane-score weather paper clean
+.PHONY: setup test lint check shadow backfill analyze sweep score calibrate probe fastlane fastlane-score weather arb paper clean
 
 VENV := .venv
 
@@ -64,3 +64,6 @@ fastlane-score:
 weather:               ## NWS forecast vs weather-market prices, then fill outcomes (no orders)
 	$(PY) weather.py --backfill
 	$(PY) weather.py
+
+arb:                   ## complete-set arbitrage scan on provably exhaustive ladders (no orders)
+	$(PY) arb.py
