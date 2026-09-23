@@ -1,0 +1,25 @@
+# Example routing file for models.py. Not read unless SWARM_ROUTING_FILE
+# points at a copy of it. Roles left out keep the active profile's route
+# (SWARM_ROUTING_PROFILE, default = today's routing).
+#
+# Every model named here must be in models.MODELS, with its price, or the
+# ledger cannot cost it. See docs/ROUTING.md before pointing a paid run at
+# anything new -- run tools/bench_roles.py on it first.
+
+# Gatherers on open weights; Haiku stays as the last fallback.
+# (Fallbacks are used by tools/bench_roles.py and models.complete(); the
+# swarm pipeline itself calls only the primary.)
+[roles.gatherer_sleuth]
+primary = "openrouter/deepseek/deepseek-v4.1-flash"
+fallbacks = ["openrouter/z-ai/glm-5.3-flash", "anthropic/claude-haiku-4-5"]
+
+[roles.gatherer_historian]
+primary = "openrouter/deepseek/deepseek-v4.1-flash"
+fallbacks = ["openrouter/openai/gpt-oss-120b", "anthropic/claude-haiku-4-5"]
+
+[roles.gatherer_red_team]
+primary = "openrouter/z-ai/glm-5.3-flash"
+fallbacks = ["openrouter/deepseek/deepseek-v4.1-flash", "anthropic/claude-haiku-4-5"]
+
+# Synthesis is deliberately not overridden: it stays on TIER3_MODEL
+# (Claude Opus 5.5) until a benchmark on resolved markets says otherwise.
