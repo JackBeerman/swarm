@@ -3,7 +3,7 @@ questions.py -- every Jev question and every threshold, in one file.
 
 Kept separate on TypeSafe's own advice: questions and thresholds are the
 part a human must actually review, and they should not be scattered through
-application code. Jack: this is the file to edit. The rest of the pipeline
+application code. This is the file a human edits. The rest of the pipeline
 is plumbing.
 
 Three corrections from the TypeSafe build guide, all of which changed the
@@ -95,7 +95,7 @@ def political_tag(tags: Any) -> str | None:
     Substring match on purpose: the wire's tag vocabulary has never been
     recorded (shadow.db `tags` is NULL on every row so far), so an exact
     set would miss `us-politics` or `elections-2028`. A false positive
-    costs one skipped market; a false negative breaks Jack's rule.
+    costs one skipped market; a false negative breaks the operator's rule.
     """
     for t in tags or []:
         slug = str(t.get("slug") or t.get("label") or "") if isinstance(t, dict) else str(t)
@@ -294,7 +294,7 @@ RESTRICTED_QUESTIONS: dict[str, dict[str, Any]] = {
             },
         },
     },
-    # Jack's instruction, 2026-09-21: no politics on Polymarket, at all.
+    # Operator constraint, 2026-09-21: no politics on Polymarket, at all.
     # Broader than the three above on purpose -- any country, any level,
     # and political figures as subjects. The question above still says
     # foreign elections are "false" for IT; this one catches them.

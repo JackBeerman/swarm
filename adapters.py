@@ -257,7 +257,7 @@ def iter_event_markets(
 DEFAULT_TAG_MIX = (
     "economics", "business", "crypto", "culture", "science", "sports",
 )
-# No "politics": Jack does not trade it, so sampling it is wasted quotes.
+# No "politics": the operator does not trade it, so sampling it is wasted quotes.
 # questions.political_tag() and the politics_or_government Noul still
 # guard the other tags, where political markets also turn up.
 

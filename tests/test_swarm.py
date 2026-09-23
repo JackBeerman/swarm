@@ -1129,7 +1129,7 @@ async def test_jev_retries_5xx_and_survives_a_junk_retry_after(monkeypatch):
     assert route.call_count == 2 and v.model == "jev-1.13.0"
 
 
-# --- no politics, at all (Jack, 2026-09-21) -------------------------------
+# --- no politics, at all (operator constraint, 2026-09-21) ----------------
 
 @respx.mock
 async def test_politics_noul_vetoes_even_when_the_us_questions_pass():
