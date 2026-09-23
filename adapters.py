@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import logging
 import time
 from collections import deque
@@ -148,6 +149,48 @@ def derive_notionals(bbo: dict[str, Any]) -> dict[str, float | None]:
     }
 
 
+_SIGNED = re.compile(r"^[+-]\d+(?:\.\d+)?$")
+
+
+def _side_team(side: dict[str, Any]) -> str | None:
+    t = side.get("team")
+    return (t.get("name") if isinstance(t, dict) else t) or None
+
+
+def yes_side(market: dict[str, Any]) -> dict[str, Any]:
+    """
+    What YES actually pays on, from the exchange's structured `marketSides`
+    (the one entry with long=True), never from the title.
+
+    Verified 2026-09-23 against settlements (Giants-Rams, final 6-28): the
+    game spread "pos 0.5" settled NO and "pos 33.5" settled YES, so YES on
+    an underdog ("pos") spread is the underdog PLUS the line -- the long
+    side -- while the title said "Rams wins by over X" and, on NFL, the
+    settlement text said "Yes if the Rams outscore the Giants by more than
+    X". Moneyline titles ("Blue Jays vs Orioles") name no side at all.
+
+    Returns {"kind", "team", "label", "text_conflict"}; kind is "spread",
+    "moneyline", "total" or "other" (Yes/No legs, where the title is right).
+    """
+    longs = [x for x in market.get("marketSides") or [] if x.get("long") is True]
+    title = str(market.get("title") or "")
+    if len(longs) != 1:
+        return {"kind": "other", "team": None, "label": title or None, "text_conflict": False}
+    side = longs[0]
+    desc = str(side.get("description") or "").strip()
+    team = _side_team(side)
+    if team and _SIGNED.match(desc):
+        line = f"{float(desc):+g}"
+        conflict = bool(title) and team.lower() not in title.lower()
+        return {"kind": "spread", "team": team, "label": f"{team} {line}", "text_conflict": conflict}
+    if team and desc and desc.lower() == team.lower():
+        return {"kind": "moneyline", "team": team, "label": f"{team} wins", "text_conflict": False}
+    if desc.lower() in ("over", "under"):
+        conflict = bool(title) and not title.lower().startswith(desc.lower())
+        return {"kind": "total", "team": team, "label": title or desc, "text_conflict": conflict}
+    return {"kind": "other", "team": team, "label": title or None, "text_conflict": False}
+
+
 def normalize_market(
     market: dict[str, Any],
     event: dict[str, Any] | None = None,
@@ -162,6 +205,16 @@ def normalize_market(
     """
     ev = event or {}
     tags = [t.get("slug") for t in ev.get("tags", []) if isinstance(t, dict)]
+    yes = yes_side(market)
+    raw_description = market.get("description") or ev.get("description") or ""
+    description = raw_description
+    if yes["kind"] == "spread" and yes["text_conflict"]:
+        # The exchange's sentence names the other side (NFL "pos" spreads);
+        # every model reads `description`, so it gets the sentence that
+        # matches how the market settles, and the original is kept.
+        description = (f"Resolves YES if {yes['team']} covers {yes['label'].split()[-1]} "
+                       f"(the exchange's own text names the other side; settlement "
+                       f"follows the YES side). " + raw_description)
     return {
         "slug": market.get("slug"),
         # `question` is the event-level proposition ("U.S House Midterm
@@ -169,8 +222,17 @@ def normalize_market(
         # Triage needs both, and swapping them makes every question in
         # questions.py read against the wrong string.
         "question": market.get("question") or market.get("title"),
-        "outcome": market.get("title"),
-        "description": (market.get("description") or ev.get("description") or ""),
+        # What YES pays on, from the structured YES side -- NOT the title.
+        # See yes_side(): on underdog spreads the title names the other team,
+        # and a Jev direction read against it bets the wrong side (it did:
+        # three real orders on 2026-09-21).
+        "outcome": yes["label"] or market.get("title"),
+        "outcome_kind": yes["kind"],
+        "yes_team": yes["team"],
+        "title_raw": market.get("title"),
+        "side_text_conflict": yes["text_conflict"],
+        "description": description,
+        "description_raw": raw_description,
         "event_slug": market.get("eventSlug") or ev.get("slug"),
         "event_title": ev.get("title"),
         # TWO DIFFERENT CLOCKS, and conflating them is why short-dated
