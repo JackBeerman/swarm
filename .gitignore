@@ -21,3 +21,8 @@ Thumbs.db
 
 # dashboard export (pushed to the shared dashboard, not committed)
 .dashboard/
+logs/
+.daily.lock
+
+# agent worktrees and local Claude state
+.claude/
