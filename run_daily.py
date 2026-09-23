@@ -30,6 +30,7 @@ from datetime import datetime
 ROOT = pathlib.Path(__file__).resolve().parent
 LOCK = ROOT / ".daily.lock"
 LOG_DIR = ROOT / "logs"
+WAIT_FOR_OTHERS_S = 300
 EXCHANGE_HEAVY = ("fastlane.py", "shadow.py", "daemon.py", "arb.py", "inplay.py", "closer.py",
                   "weather_ensemble.py")
 
@@ -46,6 +47,8 @@ STEPS: list[tuple[str, list[str], int]] = [
     ("shadow-backfill", ["shadow.py", "--backfill"], 2400),
     ("traces-backfill", ["traces.py", "--backfill"], 900),
     ("fastlane-backfill", ["fastlane.py", "--backfill"], 900),
+    ("closer-report", ["closer.py", "--report"], 300),
+    ("paper", ["paper.py"], 300),
     ("dashboard-export", ["tools/dashboard_export.py"], 300),
 ]
 
@@ -124,7 +127,11 @@ Register twice-daily runs with Windows Task Scheduler (run in PowerShell, once):
   schtasks /Create /TN "swarm-daily-am" /SC DAILY /ST 09:00 /F /TR "cmd /c cd /d $dir && $py run_daily.py"
   schtasks /Create /TN "swarm-daily-pm" /SC DAILY /ST 21:30 /F /TR "cmd /c cd /d $dir && $py run_daily.py"
 
-Remove with: schtasks /Delete /TN swarm-daily-am /F  (and -pm).
+Closing lines only exist if they are captured before each start:
+
+  schtasks /Create /TN "swarm-closer" /SC MINUTE /MO 10 /F /TR "cmd /c cd /d $dir && $py closer.py --capture"
+
+Remove with: schtasks /Delete /TN swarm-daily-am /F  (and -pm, and swarm-closer).
 The machine must be awake at those times. Nothing here places orders.
 The dashboard is refreshed from the export by asking Claude to push it.
 """
@@ -141,7 +148,15 @@ def main() -> int:
         print(SCHEDULE_HELP.format(py=sys.executable, root=ROOT))
         return 0
     steps = select_steps(args.only)
+    # A closing-line capture pass (closer.py, every ~10 min) takes seconds:
+    # wait it out rather than skip the day. Anything still running after
+    # the wait is a long job or an orphan, and the run refuses.
     others = other_swarm_processes()
+    waited = 0
+    while others and not args.force and waited < WAIT_FOR_OTHERS_S:
+        time.sleep(15)
+        waited += 15
+        others = other_swarm_processes()
     if others and not args.force:
         print("another swarm process is using the exchange; not starting (use --force):")
         for o in others:
