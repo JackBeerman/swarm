@@ -67,7 +67,10 @@ def test_store_writes_derived_volume_and_provenance(db):
     volume_usd was NULL on every row: it was read off the normalized
     market, which carries None by design. It must come from the quote.
     """
-    shadow.store(db, _sports_verdict(), MARKET, BBO)
+    # Event time built here, not at import, so the check never depends on
+    # how long collection took.
+    m = {**MARKET, "event_at": (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat()}
+    shadow.store(db, _sports_verdict(), m, BBO)
     r = db.execute("SELECT * FROM verdicts").fetchone()
     assert r["volume_usd"] == pytest.approx(20000.0 * 0.49)
     assert r["liquidity_usd"] == pytest.approx(30000.0 * 0.49)

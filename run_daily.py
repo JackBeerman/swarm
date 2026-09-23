@@ -73,7 +73,9 @@ def other_swarm_processes() -> list[str]:
 
 def acquire_lock(max_age_h: float = 6.0) -> bool:
     """One run at a time. A lock older than max_age_h is stale and taken over."""
-    if LOCK.exists() and time.time() - LOCK.stat().st_mtime < max_age_h * 3600:
+    # Clamped at zero: on a synced folder a fresh file's mtime can read a
+    # hair ahead of the clock, and a negative age would never go stale.
+    if LOCK.exists() and max(0.0, time.time() - LOCK.stat().st_mtime) < max_age_h * 3600:
         return False
     LOCK.write_text(f"{os.getpid()} {datetime.now().isoformat()}")
     return True
