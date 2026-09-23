@@ -232,3 +232,21 @@ async def test_watchlist_treats_an_unchecked_market_as_vetoed():
     watch = {"e": {"title": "t", "markets": [{"slug": "a", "question": "q", "outcome": "o"}]}}
     await fl.drop_restricted(BrokenJev(), watch)
     assert watch == {}
+
+
+def test_scenario_score_measures_gap_closed_toward_the_briefs_price(tmp_path, capsys):
+    """Book at 0.50, brief says 0.30 if the QB is out: moving to 0.40 closes half."""
+    path = str(tmp_path / "f.db")
+    conn = fl.connect(path)
+    conn.execute("INSERT INTO headlines (id, seen_at, source, url, title) VALUES (1,'t','s','u','h')")
+    conn.execute(
+        "INSERT INTO signals (headline_id, at, market_slug, effect, effect_conf, size, acted,"
+        " bid0, ask0, mid_5m, mid_30m, scenario, fair_yes, resolved_outcome)"
+        " VALUES (1,'t','m','lowers',0.9,1.5,1,0.49,0.51,0.40,0.30,'qb_out',0.30,'0')")
+    conn.commit()
+    conn.close()
+    fl.score_scenarios(path)
+    row = next(line for line in capsys.readouterr().out.splitlines() if "qb_out" in line)
+    cells = row.split()
+    assert cells[3] == "+0.50" and cells[4] == "+1.00"
+    assert cells[5] == "0.0900" and cells[6] == "0.2500"   # fair closer to the outcome

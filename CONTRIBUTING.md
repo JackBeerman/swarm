@@ -7,7 +7,7 @@ Read [README.md](README.md) for what the project is testing and
 
 ```bash
 make setup      # or the PowerShell steps in the README
-make check      # ruff + 208 tests, no network, no keys
+make check      # ruff + 209 tests, no network, no keys
 ```
 
 Then put **your own** `TYPESAFE_API_KEY` in `.env` and run

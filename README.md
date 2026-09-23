@@ -261,7 +261,7 @@ is the open question.
 | [inplay.py](inplay.py) | Websocket feed and in-game experiments. |
 | [config.py](config.py) | Env loading, fail-fast validation. |
 | [tools/](tools/) | `probe_restricted.py`, `probe_fastlane.py`, `probe_dedup.py`, `probe_concerns.py`, `survey_tags.py`, `by_category.py`. |
-| [tests/](tests/) | 208 tests. No network, no keys; httpx is mocked at the transport layer. |
+| [tests/](tests/) | 209 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
 | [docs/BRIEF.md](docs/BRIEF.md) | Design: the brief that gives Jev its information, and the loop that revises it. |
 | [docs/PROPOSALS.md](docs/PROPOSALS.md) | Question changes awaiting a human decision. |
@@ -272,7 +272,7 @@ is the open question.
 ```bash
 make setup                 # venv, deps, .env from the template
 # put your own keys in .env; it is gitignored. Never commit or paste it.
-make check                 # ruff + 208 tests, no network, no keys needed
+make check                 # ruff + 209 tests, no network, no keys needed
 python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 

@@ -206,7 +206,8 @@ def connect(path: str = DB_PATH) -> sqlite3.Connection:
     conn.executescript(_SCHEMA)
     have = {r["name"] for r in conn.execute("PRAGMA table_info(signals)")}
     for col, typ in (("repeat", "REAL"), ("scenario", "TEXT"), ("scenario_conf", "REAL"),
-                     ("contradicts", "REAL"), ("fair_yes", "REAL"), ("edge", "REAL")):
+                     ("contradicts", "REAL"), ("fair_yes", "REAL"), ("edge", "REAL"),
+                     ("resolved_outcome", "TEXT")):
         if col not in have:
             conn.execute(f"ALTER TABLE signals ADD COLUMN {col} {typ}")  # noqa: S608 -- constants
     conn.commit()
@@ -875,6 +876,79 @@ def score(db: str = DB_PATH) -> None:
     print("\n  Positive signed drift means the book moved the way Jev said AFTER we saw the\n"
           "  headline. It has to beat the spread (~0.02) and the control's drift to matter,\n"
           "  and it needs dozens of acted headlines across several days before it is a finding.")
+    score_scenarios(db)
+
+
+def score_scenarios(db: str = DB_PATH) -> None:
+    """
+    Is the brief worth anything? docs/BRIEF.md step 3.
+
+    For rows where Jev matched a pre-priced scenario: did the book move
+    TOWARD the brief's fair price (share of the gap closed at +5 and +30
+    min), and once settled, was fair_yes closer to the outcome than the
+    price at the signal? Unit is the headline; within one, rows average.
+    """
+    with closing(connect(db)) as conn:
+        rows = conn.execute(
+            "SELECT * FROM signals WHERE fair_yes IS NOT NULL"
+            " AND bid0 IS NOT NULL AND ask0 IS NOT NULL").fetchall()
+    print(f"\n  scenario matches with a pre-written fair price: {len(rows)} rows, "
+          f"{len({r['headline_id'] for r in rows})} headlines")
+    if not rows:
+        return
+    by_sc: dict[str, list] = {}
+    for r in rows:
+        by_sc.setdefault(r["scenario"], []).append(r)
+    print(f"  {'scenario':<28}{'heads':>6}{'gap0':>8}{'closed+5m':>11}{'closed+30m':>12}"
+          f"{'brier fair':>12}{'brier mkt':>11}")
+    for sc, rs in sorted(by_sc.items(), key=lambda kv: -len(kv[1])):
+        def closed(col, rs=rs):
+            per: dict[int, list[float]] = {}
+            for r in rs:
+                m0 = (r["bid0"] + r["ask0"]) / 2
+                gap = r["fair_yes"] - m0
+                if r[col] is None or abs(gap) < 0.01:
+                    continue
+                per.setdefault(r["headline_id"], []).append((r[col] - m0) / gap)
+            v = [statistics.mean(x) for x in per.values()]
+            return f"{statistics.mean(v):+.2f}" if v else "   --"
+        gap0 = statistics.mean(abs(r["fair_yes"] - (r["bid0"] + r["ask0"]) / 2) for r in rs)
+        res = [r for r in rs if r["resolved_outcome"] in ("0", "1")]
+        if res:
+            bf = statistics.mean((r["fair_yes"] - float(r["resolved_outcome"])) ** 2 for r in res)
+            bm = statistics.mean(((r["bid0"] + r["ask0"]) / 2 - float(r["resolved_outcome"])) ** 2
+                                 for r in res)
+            bfs, bms = f"{bf:.4f}", f"{bm:.4f}"
+        else:
+            bfs = bms = "--"
+        print(f"  {str(sc)[:27]:<28}{len({r['headline_id'] for r in rs}):>6}{gap0:>8.3f}"
+              f"{closed('mid_5m'):>11}{closed('mid_30m'):>12}{bfs:>12}{bms:>11}")
+    print("  closed = share of the gap between the price and the brief's fair price that\n"
+          "  the book closed afterwards (1.0 = moved all the way to fair, 0 = did not move,\n"
+          "  negative = moved away). Brier columns fill after --backfill.")
+
+
+async def backfill(db: str = DB_PATH, pause: float = 2.0) -> None:
+    """Fill resolved_outcome on signals from the settlement endpoint. 404 means not yet."""
+    with closing(connect(db)) as conn:
+        slugs = [r[0] for r in conn.execute(
+            "SELECT DISTINCT market_slug FROM signals WHERE resolved_outcome IS NULL")]
+        filled = 0
+        async with AsyncPolymarketUS() as pm:
+            for slug in slugs:
+                try:
+                    res = await pm.markets.settlement(slug)
+                except Exception:  # noqa: BLE001 -- NotFoundError: still open
+                    await asyncio.sleep(pause)
+                    continue
+                v = res.get("settlement")
+                if v in (0, 1, "0", "1"):
+                    conn.execute("UPDATE signals SET resolved_outcome=? WHERE market_slug=?",
+                                 (str(int(v)), slug))
+                    conn.commit()
+                    filled += 1
+                await asyncio.sleep(pause)
+    log.info("backfill: %d of %d markets settled", filled, len(slugs))
 
 
 def main() -> None:
@@ -890,9 +964,14 @@ def main() -> None:
     ap.add_argument("--no-brief", action="store_true",
                     help="skip the LLM roster brief (no Anthropic spend; directions unreliable)")
     ap.add_argument("--score", action="store_true")
+    ap.add_argument("--backfill", action="store_true", help="fill settled outcomes on signals")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.backfill:
+        asyncio.run(backfill())
+        if not args.score:
+            return
     if args.score:
         score()
         return
