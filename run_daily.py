@@ -30,13 +30,16 @@ from datetime import datetime
 ROOT = pathlib.Path(__file__).resolve().parent
 LOCK = ROOT / ".daily.lock"
 LOG_DIR = ROOT / "logs"
-EXCHANGE_HEAVY = ("fastlane.py", "shadow.py", "daemon.py", "arb.py", "inplay.py", "closer.py")
+EXCHANGE_HEAVY = ("fastlane.py", "shadow.py", "daemon.py", "arb.py", "inplay.py", "closer.py",
+                  "weather_ensemble.py")
 
 #: (name, argv after the interpreter, timeout seconds). Order matters:
 #: fill outcomes before anything that reports on them.
 STEPS: list[tuple[str, list[str], int]] = [
     ("weather-backfill", ["weather.py", "--backfill"], 600),
     ("weather", ["weather.py"], 300),
+    ("ensemble-backfill", ["weather_ensemble.py", "--backfill"], 600),
+    ("ensemble", ["weather_ensemble.py"], 600),
     ("arb", ["arb.py"], 900),
     ("shadow-collect", ["shadow.py", "--collect", "--limit", "200", "--events", "60",
                         "--min-hours", "1"], 2400),
