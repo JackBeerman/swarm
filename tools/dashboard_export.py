@@ -245,6 +245,18 @@ def research_spend() -> float:
     return round(sum(r[0] or 0 for r in t.execute("SELECT cost_usd FROM evaluations")), 2) if t else 0.0
 
 
+def clv_and_equity() -> list[tuple[str, str, dict]]:
+    """
+    `clv/summary` (closer.py) and `equity/<lane>` (paper.py). Both read the
+    lane databases read-only and compute fresh; neither touches the exchange.
+    """
+    import closer
+    import paper
+    docs = [("clv", "summary", closer.report_data())]
+    docs += [("equity", lane, paper.equity_doc(res)) for lane, res in paper.build().items()]
+    return docs
+
+
 def main() -> None:
     real, acct = asyncio.run(real_bets())
     paper = paper_bets()
@@ -274,6 +286,7 @@ def main() -> None:
             ("calibration", "nfl", cal), ("weather", "latest", wx)]
     docs += [("real", r["id"], r) for r in real]
     docs += [("paper", p["id"], p) for p in paper]
+    docs += clv_and_equity()
     manifest = []
     for coll, did, body in docs:
         p = OUT / coll / f"{did}.json"
