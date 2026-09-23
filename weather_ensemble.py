@@ -63,9 +63,8 @@ from typing import Any, Protocol
 import httpx
 
 import weather
-from adapters import listed_mid
 
-log = logging.getLogger("weather_ensemble")
+log =logging.getLogger("weather_ensemble")
 
 DB_PATH = weather.DB_PATH
 
@@ -272,6 +271,8 @@ def connect(path: str = DB_PATH) -> sqlite3.Connection:
     """weather.db with weather.py's table and these two alongside it."""
     conn = weather.connect(path)
     conn.executescript(_SCHEMA)
+    conn.execute("UPDATE band_forecasts SET market_mid = NULL WHERE market_mid <= 0")
+    conn.commit()
     return conn
 
 
@@ -301,7 +302,7 @@ def ladders_from_events(events: list[dict[str, Any]]) -> dict[tuple[str, str], L
             lad = out.setdefault((info["city"], info["date"]), Ladder(info["city"], info["date"]))
             lad.slugs.append(m["slug"])
             lad.bands.append((info["lo"], info["hi"]))
-            lad.mids.append(listed_mid(m))
+            lad.mids.append(weather.market_price(m))   # None, never 0.0, when unpriced
     for lad in out.values():
         order = sorted(range(len(lad.bands)),
                        key=lambda i: -1e9 if lad.bands[i][0] is None else lad.bands[i][0])
@@ -426,7 +427,7 @@ def print_table(band_rows: list[tuple], run_rows: list[tuple]) -> None:
             cells = "".join(f"{p[(r[2], s)]:>8.2f}" if (r[2], s) in p else f"{'-':>8}"
                             for s in sources)
             mk = mid.get(r[2])
-            print(f"  {band:<9}{cells}{mk if mk is None else f'{mk:.3f}':>8}")
+            print(f"  {band:<9}{cells}{'-' if mk is None else f'{mk:.3f}':>8}")
 
 
 async def record(db: str = DB_PATH, models: tuple[str, ...] = DEFAULT_MODELS,
@@ -577,32 +578,63 @@ def score(db: str = DB_PATH) -> None:
     print("  Lead 0 is not a fair comparison: the market saw the day's observations.")
 
 
-def sweep(db: str = DB_PATH, sds: tuple[float, ...] = (0.0, 0.75, 1.0, 1.5, 2.0, 3.0),
-          biases: tuple[float, ...] = (0.0, 1.0, 2.0)) -> None:
-    """Refit dressing SD and warm bias per source from stored member highs. No calls."""
-    with closing(connect(db)) as conn:
-        runs = [dict(r) for r in conn.execute("SELECT * FROM ensemble_runs WHERE n_members > 1")]
-        bands = defaultdict(list)
-        for r in conn.execute("SELECT at, source, city, target_date, band_lo, band_hi,"
-                              " resolved_outcome FROM band_forecasts"
-                              " WHERE resolved_outcome IS NOT NULL"):
-            bands[(r[0], r[1], r[2], r[3])].append((r[4], r[5], float(r[6])))
-    res: dict[tuple[str, float, float], list[float]] = defaultdict(list)
+#: Grid for --sweep. Grid cells can sit 10 F off a coastal station (live
+#: 2026-09-23: ECMWF 92 F vs NWS 81 F at KLAX), so the bias range is wide.
+SWEEP_SDS: tuple[float, ...] = (0.0, 1.0, 1.5, 2.0, 3.0)
+SWEEP_BIASES: tuple[float, ...] = tuple(float(b) for b in range(-12, 7))
+
+
+def sweep_fit(runs: list[dict[str, Any]], bands: dict[tuple, list[tuple]],
+              sds: tuple[float, ...] = SWEEP_SDS,
+              biases: tuple[float, ...] = SWEEP_BIASES) -> dict[tuple[str, str], dict[str, Any]]:
+    """
+    Per (source, city): Brier of the raw recorded setting (sd 0, bias 0) and
+    of the best (dress_sd, bias) on the grid. In-sample: the best is an
+    upper bound on what a refit would earn until checked on later days.
+    """
+    res: dict[tuple[str, str, float, float], list[float]] = defaultdict(list)
+    days: dict[tuple[str, str], set] = defaultdict(set)
     for run in runs:
         lad = bands.get((run["at"], run["source"], run["city"], run["target_date"]))
         if not lad:
             continue
         maxes = json.loads(run["maxes_json"])
+        days[(run["source"], run["city"])].add(run["target_date"])
+        ladder = [(lo, hi) for lo, hi, _ in lad]
         for sd in sds:
             for b in biases:
-                ps = ensemble_band_probs(maxes, [(lo, hi) for lo, hi, _ in lad], dress_sd=sd, bias=b)
-                res[(run["source"], sd, b)] += [(p - y) ** 2 for p, (_, _, y) in zip(ps, lad, strict=True)]
-    if not res:
+                ps = ensemble_band_probs(maxes, ladder, dress_sd=sd, bias=b)
+                res[(run["source"], run["city"], sd, b)] += [
+                    (p - y) ** 2 for p, (_, _, y) in zip(ps, lad, strict=True)]
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for key in days:
+        grid = {(sd, b): statistics.mean(res[(*key, sd, b)]) for sd in sds for b in biases
+                if res.get((*key, sd, b))}
+        best = min(grid, key=grid.get)
+        out[key] = {"days": len(days[key]), "raw": grid.get((0.0, 0.0)),
+                    "best_sd": best[0], "best_bias": best[1], "best": grid[best]}
+    return out
+
+
+def sweep(db: str = DB_PATH) -> None:
+    """Refit dressing SD and bias per source and station from stored member highs. No calls."""
+    with closing(connect(db)) as conn:
+        runs = [dict(r) for r in conn.execute("SELECT * FROM ensemble_runs WHERE n_members > 1")]
+        bands: dict[tuple, list[tuple]] = defaultdict(list)
+        for r in conn.execute("SELECT at, source, city, target_date, band_lo, band_hi,"
+                              " resolved_outcome FROM band_forecasts"
+                              " WHERE resolved_outcome IS NOT NULL"):
+            bands[(r[0], r[1], r[2], r[3])].append((r[4], r[5], float(r[6])))
+    fit = sweep_fit(runs, bands)
+    if not fit:
         print("nothing resolved with stored member highs yet.")
         return
-    print(f"  {'source':<36}{'dress_sd':>9}{'bias':>6}{'n':>6}{'brier':>9}")
-    for (src, sd, b), errs in sorted(res.items()):
-        print(f"  {src:<36}{sd:>9.2f}{b:>6.1f}{len(errs):>6}{statistics.mean(errs):>9.4f}")
+    print(f"  {'source':<36}{'city':<9}{'days':>5}{'raw':>9}{'best':>9}{'sd':>6}{'bias':>6}")
+    for (src, city), f in sorted(fit.items()):
+        raw = float("nan") if f["raw"] is None else f["raw"]
+        print(f"  {src:<36}{city:<9}{f['days']:>5}{raw:>9.4f}{f['best']:>9.4f}"
+              f"{f['best_sd']:>6.1f}{f['best_bias']:>+6.0f}")
+    print("\n  In-sample fit. Trust a bias only after it holds on days it was not fit on.")
 
 
 def main() -> None:

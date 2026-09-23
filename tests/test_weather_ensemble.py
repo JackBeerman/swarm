@@ -211,3 +211,36 @@ def test_outcomes_weather_py_already_has_are_copied_not_refetched(tmp_path):
     with closing(sqlite3.connect(db)) as conn:
         got = dict(conn.execute("SELECT market_slug, resolved_outcome FROM band_forecasts"))
     assert got == {"s1": "1", "s9": None}
+
+
+def test_unpriced_ladders_record_null_not_zero(tmp_path):
+    events = [{"markets": [
+        {"slug": "tc-temp-laxhigh-2026-09-24-lt78f", "outcomePrices": '["0","0"]'},
+        {"slug": "tc-temp-laxhigh-2026-09-24-gte78f", "outcomePrices": '["0","0"]'}]}]
+    lad = we.ladders_from_events(events)[("laxhigh", "2026-09-24")]
+    assert lad.mids == [None, None]
+    db = str(tmp_path / "w.db")
+    with closing(we.connect(db)) as conn:
+        we.store(conn, [("t", "om:x", "s1", "laxhigh", "2026-09-24", 1, None, 77.0, 0.4, 0.0)], [])
+    with closing(we.connect(db)) as conn:                     # legacy 0.0 cleaned on connect
+        assert conn.execute("SELECT market_mid FROM band_forecasts").fetchone()[0] is None
+    rows = [_row("a", "s1", 0.9, None, 1), _row("a", "s2", 0.2, 0.5, 0)]
+    (t,) = we.brier_table(rows)
+    assert t["n"] == 1 and t["market"] == pytest.approx(0.25)
+
+
+def test_sweep_finds_the_bias_of_a_cold_grid_cell():
+    # Every member sits 6 F below what happened: the fit should warm it back.
+    ladder = [(None, 77.0), (78.0, 79.0), (80.0, 81.0), (82.0, 83.0), (84.0, None)]
+    runs, bands = [], {}
+    for i, truth_band in enumerate([2, 2, 3, 1]):
+        day = f"2026-09-{10 + i}"
+        truth_mid = [76, 78.5, 80.5, 82.5, 85][truth_band]
+        runs.append({"at": "t", "source": "om:x", "city": "laxhigh", "target_date": day,
+                     "maxes_json": json.dumps([truth_mid - 6 + d for d in (-0.3, 0.0, 0.3)])})
+        bands[("t", "om:x", "laxhigh", day)] = [
+            (lo, hi, 1.0 if j == truth_band else 0.0) for j, (lo, hi) in enumerate(ladder)]
+    fit = we.sweep_fit(runs, bands)[("om:x", "laxhigh")]
+    assert fit["days"] == 4
+    assert fit["best_bias"] == pytest.approx(6.0, abs=1.0)
+    assert fit["best"] < fit["raw"]
