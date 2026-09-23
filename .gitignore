@@ -23,3 +23,6 @@ Thumbs.db
 .dashboard/
 logs/
 .daily.lock
+
+# agent worktrees and local Claude state
+.claude/
