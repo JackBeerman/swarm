@@ -755,9 +755,10 @@ class Recorder:
 
 async def run(tags: tuple[str, ...], start_window: float, minutes: float,
               poll_seconds: float, replay: int, per_event: int,
-              brief: bool = True) -> None:
+              brief: bool = True, fast_sources: bool = False) -> None:
     th = FastLaneThresholds()
     feeds = feeds_for(tags)
+    extra: list[Any] = []                 # sources.Source objects; see --fast-sources
     sport = any(t in GAME_TAGS for t in tags)
     async with AsyncPolymarketUS() as pm, httpx.AsyncClient(
         timeout=10, follow_redirects=True,
@@ -817,11 +818,22 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
             log.error("no watched market to follow: %s", counts)
             return
 
+        if fast_sources:
+            # Opt-in: sources.py adds MLB game events, Google News per
+            # watched event, Bluesky beat accounts. Each Source throttles
+            # itself, so polling it every `poll_seconds` stays polite.
+            from sources import sources_for
+            extra = sources_for(tags, [ev["title"] for ev in watch.values()])
+            log.info("fast sources: %s", ", ".join(x.name for x in extra))
+
+        async def poll_all() -> list[list[dict[str, Any]]]:
+            return await asyncio.gather(*(poll_feed(client, s, u) for s, u in feeds.items()),
+                                        *(x.poll(client) for x in extra))
+
         with closing(connect()) as conn:
             rec = Recorder(conn, jev, quotes, watch, th)
 
-            first = [h for batch in await asyncio.gather(
-                *(poll_feed(client, s, u) for s, u in feeds.items())) for h in batch]
+            first = [h for batch in await poll_all() for h in batch]
             seen = {(h["url"], h["title"]) for h in first}
             log.info("baseline: %d existing items across %d feeds (%s)", len(first), len(feeds),
                      ", ".join(feeds))
@@ -833,8 +845,7 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
             deadline = time.monotonic() + minutes * 60
             while time.monotonic() < deadline and not replay:
                 await asyncio.sleep(poll_seconds)
-                batches = await asyncio.gather(
-                    *(poll_feed(client, s, u) for s, u in feeds.items()))
+                batches = await poll_all()
                 for h in (h for b in batches for h in b):
                     if time.monotonic() >= deadline:
                         break
@@ -1029,6 +1040,8 @@ def main() -> None:
                     help="smoke test: judge the newest N existing items, then exit")
     ap.add_argument("--no-brief", action="store_true",
                     help="skip the LLM roster brief (no Anthropic spend; directions unreliable)")
+    ap.add_argument("--fast-sources", action="store_true",
+                    help="also poll sources.py (MLB game events, Google News per event, Bluesky)")
     ap.add_argument("--score", action="store_true")
     ap.add_argument("--backfill", action="store_true", help="fill settled outcomes on signals")
     args = ap.parse_args()
@@ -1045,7 +1058,8 @@ def main() -> None:
     try:
         asyncio.run(asyncio.wait_for(
             run(tuple(t.strip() for t in args.tags.split(",")), args.start_window,
-                args.minutes, args.poll, args.replay, args.per_event, not args.no_brief),
+                args.minutes, args.poll, args.replay, args.per_event, not args.no_brief,
+                args.fast_sources),
             timeout=cap))
     except asyncio.TimeoutError:
         log.error("hard cap of %.0f min reached; exiting. Rows already written are kept.",
