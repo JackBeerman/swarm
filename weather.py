@@ -80,7 +80,23 @@ def connect(path: str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
+    # Rows recorded before market_price() existed stored 0.0 for unpriced
+    # ladders. 0.0 is never a real mid; make it the NULL it always meant.
+    conn.execute("UPDATE forecasts SET market_mid = NULL WHERE market_mid <= 0")
+    conn.commit()
     return conn
+
+
+def market_price(market: dict[str, Any]) -> float | None:
+    """
+    The listed mid, or None when the market has no price yet.
+
+    A ladder listed before trading opens (tomorrow's, in the evening) carries
+    outcomePrices of 0, so listed_mid() returns 0.0. Stored as a price, that
+    0.0 would be scored as the market saying "impossible".
+    """
+    mid = listed_mid(market)
+    return mid if mid is not None and mid > 0 else None
 
 
 # --------------------------------------------------------------------------
@@ -175,7 +191,7 @@ async def record(db: str = DB_PATH) -> None:
                 sd = ERROR_SD.get(max(0, lead), ERROR_SD[3])
                 p = band_probability(f, info["lo"], info["hi"], sd)
                 rows.append((now.isoformat(), n["slug"], info["city"], info["date"], lead, f,
-                             info["lo"], info["hi"], p, listed_mid(market)))
+                             info["lo"], info["hi"], p, market_price(market)))
         with closing(connect(db)) as conn:
             conn.executemany(
                 "INSERT OR IGNORE INTO forecasts (at, market_slug, city, target_date, lead_days,"
