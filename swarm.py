@@ -34,6 +34,7 @@ from litellm import acompletion
 from pydantic import ValidationError
 
 from adapters import derive_notionals, game_state
+from fees import fee_per_share
 from questions import (
     GateThresholds,
     StructuralLimits,
@@ -874,7 +875,13 @@ def size_from_signal(
 
     # Both branches reduce to the same thing: edge is the probability gap
     # (true prob minus price paid), and kelly = edge / (1 - price).
-    edge = kelly * (1.0 - price)
+    #
+    # Net of the exchange fee. The account ledger shows ~4% of notional
+    # charged on small orders near 0.50 (fees.py); an edge that clears
+    # min_edge only before the fee is not an edge. Kelly is recomputed on
+    # the net figure so the fee also shrinks the size, not just the gate.
+    edge = kelly * (1.0 - price) - fee_per_share(price)
+    kelly = edge / (1.0 - price)
     if kelly <= 0 or edge < cfg.min_edge:
         return None
 

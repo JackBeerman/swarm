@@ -261,7 +261,8 @@ async def test_happy_path_produces_sized_order(monkeypatch):
     assert o.side is Side.YES
     assert o.limit_price == 0.55
     assert 0 < o.notional_usd <= 8.0          # 8% cap on $100
-    assert o.raw_kelly == pytest.approx(0.3333, abs=1e-3)
+    # (0.70 - 0.55 - fee 0.0173) / 0.45: Kelly on the edge net of the fee.
+    assert o.raw_kelly == pytest.approx(0.2948, abs=1e-3)
     assert isinstance(o.quantity, int)
     assert len(res.facts) == 3
     assert {f.role for f in res.facts} == set(GatherRole)
@@ -467,10 +468,10 @@ async def test_position_cap_binds_on_extreme_edge():
 
 async def test_low_confidence_shrinks_size():
     hi = sw.size_from_signal(
-        _sig(Side.YES, 0.70, conf=0.9), {"bid": 0.53, "ask": 0.55}, 100.0, 0.9, sw.RiskConfig()
+        _sig(Side.YES, 0.70, conf=0.9), {"bid": 0.53, "ask": 0.55}, 200.0, 0.9, sw.RiskConfig()
     )
     lo = sw.size_from_signal(
-        _sig(Side.YES, 0.70, conf=0.3), {"bid": 0.53, "ask": 0.55}, 100.0, 0.9, sw.RiskConfig()
+        _sig(Side.YES, 0.70, conf=0.3), {"bid": 0.53, "ask": 0.55}, 200.0, 0.9, sw.RiskConfig()
     )
     assert lo.notional_usd < hi.notional_usd
 
@@ -1247,3 +1248,13 @@ async def test_overlong_model_output_is_clipped_not_discarded():
     t = TradeSignal(market_slug="m", side=Side.YES, probability=0.6, confidence=0.5,
                     reasoning="r" * 2000, disqualifiers=["d"] * 7)
     assert len(t.reasoning) == 800 and len(t.disqualifiers) == 4
+
+
+async def test_sizer_requires_the_edge_to_survive_the_fee():
+    """p=0.60 vs ask 0.50: a 0.10 gross edge is 0.0825 net at a 7% fee rate."""
+    sig = TradeSignal(market_slug="m", side=Side.YES, probability=0.60, confidence=1.0,
+                      reasoning="r", disqualifiers=[], abstain=False)
+    bbo = {"bid": 0.49, "ask": 0.50}
+    assert sw.size_from_signal(sig, bbo, 100.0, 1.0, sw.RiskConfig(min_edge=0.10)) is None
+    o = sw.size_from_signal(sig, bbo, 100.0, 1.0, sw.RiskConfig(min_edge=0.08))
+    assert o is not None and o.edge == pytest.approx(0.0825, abs=1e-4)
