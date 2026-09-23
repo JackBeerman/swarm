@@ -819,9 +819,10 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
             return
 
         if fast_sources:
-            # Opt-in: sources.py adds MLB game events, Google News per
-            # watched event, Bluesky beat accounts. Each Source throttles
-            # itself, so polling it every `poll_seconds` stays polite.
+            # Opt-in: sources.py adds MLB game events and Bluesky beat
+            # accounts (Google News only if sources_for is asked for it; its
+            # robots.txt disallows /rss/). Each Source throttles itself, so
+            # polling it every `poll_seconds` stays polite.
             from sources import sources_for
             extra = sources_for(tags, [ev["title"] for ev in watch.values()])
             log.info("fast sources: %s", ", ".join(x.name for x in extra))
@@ -1041,7 +1042,7 @@ def main() -> None:
     ap.add_argument("--no-brief", action="store_true",
                     help="skip the LLM roster brief (no Anthropic spend; directions unreliable)")
     ap.add_argument("--fast-sources", action="store_true",
-                    help="also poll sources.py (MLB game events, Google News per event, Bluesky)")
+                    help="also poll sources.py (MLB live game events, Bluesky; Google News is off by default)")
     ap.add_argument("--score", action="store_true")
     ap.add_argument("--backfill", action="store_true", help="fill settled outcomes on signals")
     args = ap.parse_args()
