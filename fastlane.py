@@ -143,6 +143,14 @@ def feeds_for(tags: tuple[str, ...]) -> dict[str, str]:
     return out or FEEDS
 
 FOLLOW_UPS = (("mid_1m", 60), ("mid_5m", 300), ("mid_30m", 1800))
+
+# Found 2026-09-22: a 240-minute NFL run was still alive 24 hours later,
+# recording stale headlines hours apart -- a network call waited on a dead
+# connection (the machine slept) and the deadline was only checked between
+# batches. Every await on the hot path is now bounded, and main() puts a
+# hard wall-clock cap on the whole run.
+HANDLE_TIMEOUT_S = 180
+RUN_OVERHEAD_MIN = 50       # setup + briefs + the 30-min follow-up tail
 MAX_MARKETS_PER_EVENT = 6
 
 _SCHEMA = """
@@ -804,15 +812,25 @@ async def run(tags: tuple[str, ...], start_window: float, minutes: float,
                 batches = await asyncio.gather(
                     *(poll_feed(client, s, u) for s, u in feeds.items()))
                 for h in (h for b in batches for h in b):
+                    if time.monotonic() >= deadline:
+                        break
                     key = (h["url"], h["title"])
                     if key in seen:
                         continue
                     seen.add(key)
-                    await rec.handle(h)
+                    try:
+                        await asyncio.wait_for(rec.handle(h), timeout=HANDLE_TIMEOUT_S)
+                    except asyncio.TimeoutError:
+                        log.warning("headline timed out after %ds, skipped: %s",
+                                    HANDLE_TIMEOUT_S, h["title"][:60])
 
             if rec.pending and not replay:
                 log.info("waiting on %d price follow-ups (up to 30 min)...", len(rec.pending))
-                await asyncio.gather(*rec.pending, return_exceptions=True)
+                try:
+                    await asyncio.wait_for(asyncio.gather(*rec.pending, return_exceptions=True),
+                                           timeout=35 * 60)
+                except asyncio.TimeoutError:
+                    log.warning("follow-ups did not finish in 35 min; abandoning them")
             for t in rec.pending:
                 t.cancel()
             await jev.aclose()
@@ -999,9 +1017,15 @@ def main() -> None:
     if args.score:
         score()
         return
-    asyncio.run(run(tuple(t.strip() for t in args.tags.split(",")), args.start_window,
-                    args.minutes, args.poll, args.replay, args.per_event,
-                    not args.no_brief))
+    cap = (args.minutes + RUN_OVERHEAD_MIN) * 60
+    try:
+        asyncio.run(asyncio.wait_for(
+            run(tuple(t.strip() for t in args.tags.split(",")), args.start_window,
+                args.minutes, args.poll, args.replay, args.per_event, not args.no_brief),
+            timeout=cap))
+    except asyncio.TimeoutError:
+        log.error("hard cap of %.0f min reached; exiting. Rows already written are kept.",
+                  cap / 60)
 
 
 if __name__ == "__main__":
