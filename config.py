@@ -116,7 +116,8 @@ class Config:
         if self.mode == "live":
             if os.getenv("I_UNDERSTAND_THIS_TRADES_REAL_MONEY") != "yes":
                 problems.append(
-                    "mode=live requires I_UNDERSTAND_THIS_TRADES_REAL_MONEY=yes"
+                    "mode=live requires I_UNDERSTAND_THIS_TRADES_REAL_MONEY=yes "
+                    "(read DISCLAIMER.md: real money, your risk, your jurisdiction)"
                 )
             # `jev-preview` floats too, so the test is "is a versioned id",
             # not "does not end in latest".

@@ -1,5 +1,11 @@
 # swarm
 
+> **Research code, not advice, no warranty.** Nothing here is financial or
+> betting advice, and the authors accept no liability for any use of it. You
+> are responsible for complying with the laws and platform terms that apply
+> to you. Read [DISCLAIMER.md](DISCLAIMER.md) before running anything.
+> Licensed under [MIT](LICENSE).
+
 An autonomous trading pipeline for [Polymarket US](https://polymarket.us),
 built to answer one question: **what is a System One model good for inside
 a real decision system?**
