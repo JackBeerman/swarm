@@ -24,7 +24,9 @@ ways:
 
 ![Two lanes: Jev for savings and Jev for speed](docs/lanes.svg)
 
-**Status: infrastructure is well tested; edge is not demonstrated.** Four
+**Status: paused 2026-09-23.** What the project learned is in [docs/FINDINGS.md](docs/FINDINGS.md); how to resume is at the end of it. Nothing runs on a schedule and nothing trades.
+
+**Infrastructure is well tested; edge is not demonstrated.** Four
 real orders have been placed, all tiny and manual: one to prove the round
 trip (won), three on a fast-lane signal (all lost, -$3.99; placed on the wrong side
 of a correct signal -- see below). Everything else
@@ -288,7 +290,7 @@ is the open question.
 | [tools/](tools/) | Probes (`probe_restricted`, `probe_fastlane`, `probe_dedup`, `probe_concerns`, `probe_mlb_events`), `bench_roles`, `measure_sources`, `survey_tags`, `by_category`, `fix_inverted_spreads`. |
 | [tests/](tests/) | 437 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
-| [docs/](docs/) | [BRIEF.md](docs/BRIEF.md) (how Jev gets its information), [AGENTS.md](docs/AGENTS.md) (roles), [ROUTING.md](docs/ROUTING.md), [PROPOSALS.md](docs/PROPOSALS.md) (changes awaiting a human). |
+| [docs/](docs/) | [FINDINGS.md](docs/FINDINGS.md) (start here), [BRIEF.md](docs/BRIEF.md) (how Jev gets its information), [AGENTS.md](docs/AGENTS.md) (roles), [ROUTING.md](docs/ROUTING.md), [PROPOSALS.md](docs/PROPOSALS.md) (changes awaiting a human). |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, where changes go, and what needs evidence. |
 
 ## Setup
