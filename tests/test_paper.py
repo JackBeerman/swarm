@@ -137,7 +137,8 @@ def test_weather_loader_skips_bookless_mids_and_lead_zero(tmp_path):
     import weather
     db = tmp_path / "weather.db"
     with weather.connect(str(db)) as c:
-        rows = [("tc-temp-nychigh-2026-09-24-gte66lt67f", 1, 0.30, 0.0),     # no book
+        rows = [("tc-temp-nychigh-2026-09-24-gte66lt67f", 1, 0.30, 0.0),     # old: no book as 0.0
+                ("tc-temp-nychigh-2026-09-24-gte68lt69f", 1, 0.30, None),    # new: no book as NULL
                 ("tc-temp-nychigh-2026-09-23-gte67lt68f", 1, 0.31, 0.50),    # real
                 ("tc-temp-nychigh-2026-09-22-gte65lt66f", 0, 0.30, 0.57)]    # lead 0
         c.executemany("INSERT INTO forecasts (at, market_slug, city, target_date, lead_days,"
