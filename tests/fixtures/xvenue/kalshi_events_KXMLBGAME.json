@@ -1,0 +1,85 @@
+{
+ "events": [
+  {
+   "category": "Sports",
+   "collateral_return_type": "MECNET",
+   "event_ticker": "KXMLBGAME-26SEP231940CWSKC",
+   "exchange_index": 3,
+   "last_updated_ts": "2026-09-20T23:57:52.339295Z",
+   "mutually_exclusive": true,
+   "product_metadata": {
+    "competition": "Pro Baseball",
+    "competition_scope": "Game"
+   },
+   "series_ticker": "KXMLBGAME",
+   "settlement_sources": [
+    {
+     "name": "ESPN",
+     "url": "https://www.espn.com"
+    },
+    {
+     "name": "Fox Sports",
+     "url": "https://www.foxsports.com"
+    },
+    {
+     "name": "the Governing League",
+     "url": "https://www.mlb.com/"
+    }
+   ],
+   "strike_period": "",
+   "sub_title": "CWS vs KC (Sep 23)",
+   "title": "Chicago WS vs Kansas City",
+   "markets": [
+    {
+     "ticker": "KXMLBGAME-26SEP231940CWSKC-CWS",
+     "event_ticker": "KXMLBGAME-26SEP231940CWSKC",
+     "title": "Chicago WS wins",
+     "yes_sub_title": "Chicago WS",
+     "no_sub_title": "Chicago WS",
+     "status": "active",
+     "strike_type": "structured",
+     "custom_strike": {
+      "baseball_team": "db7094b8-5481-4780-9763-51a66dfaf091"
+     },
+     "yes_bid_dollars": "0.5100",
+     "yes_ask_dollars": "0.5200",
+     "no_bid_dollars": "0.4800",
+     "no_ask_dollars": "0.4900",
+     "yes_bid_size_fp": "71087.23",
+     "yes_ask_size_fp": "19356.12",
+     "close_time": "2026-09-26T23:40:00Z",
+     "expected_expiration_time": "2026-09-24T02:40:00Z",
+     "rules_primary": "If Chicago WS wins the Chicago WS vs Kansas City professional baseball game originally scheduled for Sep 23, 2026 at 7:40 PM EDT, then the market resolves to Yes.",
+     "can_close_early": true,
+     "market_type": "binary",
+     "price_level_structure": "linear_cent"
+    },
+    {
+     "ticker": "KXMLBGAME-26SEP231940CWSKC-KC",
+     "event_ticker": "KXMLBGAME-26SEP231940CWSKC",
+     "title": "Kansas City wins",
+     "yes_sub_title": "Kansas City",
+     "no_sub_title": "Kansas City",
+     "status": "active",
+     "strike_type": "structured",
+     "custom_strike": {
+      "baseball_team": "1fd1359b-d478-46ab-9ea7-612d671951d6"
+     },
+     "yes_bid_dollars": "0.4800",
+     "yes_ask_dollars": "0.4900",
+     "no_bid_dollars": "0.5100",
+     "no_ask_dollars": "0.5200",
+     "yes_bid_size_fp": "19451.00",
+     "yes_ask_size_fp": "138062.74",
+     "close_time": "2026-09-26T23:40:00Z",
+     "expected_expiration_time": "2026-09-24T02:40:00Z",
+     "rules_primary": "If Kansas City wins the Chicago WS vs Kansas City professional baseball game originally scheduled for Sep 23, 2026 at 7:40 PM EDT, then the market resolves to Yes.",
+     "can_close_early": true,
+     "market_type": "binary",
+     "price_level_structure": "linear_cent"
+    }
+   ]
+  }
+ ],
+ "cursor": ""
+}

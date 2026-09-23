@@ -1,0 +1,23 @@
+{
+ "series": {
+  "ticker": "KXHIGHNY",
+  "title": "Highest temperature in NYC",
+  "category": "Climate and Weather",
+  "categories": [
+   "Climate and Weather"
+  ],
+  "tags": [
+   "Daily temperature"
+  ],
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "settlement_sources": [
+   {
+    "name": "The Weather Company",
+    "url": "https://weather.com/kalshi"
+   }
+  ],
+  "contract_terms_url": "https://assets.kalshi.com/contract_terms/GLOBALTEMPERATURE.pdf",
+  "frequency": "daily"
+ }
+}

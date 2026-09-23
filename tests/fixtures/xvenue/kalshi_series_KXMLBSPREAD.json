@@ -1,0 +1,23 @@
+{
+ "series": {
+  "ticker": "KXMLBSPREAD",
+  "title": "Pro Baseball Spread",
+  "category": "Sports",
+  "categories": [
+   "Sports"
+  ],
+  "tags": [
+   "Baseball"
+  ],
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "settlement_sources": [
+   {
+    "name": "the Governing League",
+    "url": "https://www.mlb.com/"
+   }
+  ],
+  "contract_terms_url": "https://assets.kalshi.com/contract_terms/BASEBALLSPREAD.pdf",
+  "frequency": "custom"
+ }
+}

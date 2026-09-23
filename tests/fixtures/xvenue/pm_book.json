@@ -1,0 +1,95 @@
+{
+ "marketData": {
+  "marketSlug": "aec-mlb-tor-bal-2026-09-22",
+  "bids": [
+   {
+    "px": {
+     "value": "0.4550",
+     "currency": "USD"
+    },
+    "qty": "29.0000"
+   },
+   {
+    "px": {
+     "value": "0.4500",
+     "currency": "USD"
+    },
+    "qty": "3072.0900"
+   },
+   {
+    "px": {
+     "value": "0.4450",
+     "currency": "USD"
+    },
+    "qty": "2.0000"
+   },
+   {
+    "px": {
+     "value": "0.4400",
+     "currency": "USD"
+    },
+    "qty": "1568.0000"
+   },
+   {
+    "px": {
+     "value": "0.3850",
+     "currency": "USD"
+    },
+    "qty": "6309.5800"
+   },
+   {
+    "px": {
+     "value": "0.3800",
+     "currency": "USD"
+    },
+    "qty": "3732.0000"
+   }
+  ],
+  "offers": [
+   {
+    "px": {
+     "value": "0.4600",
+     "currency": "USD"
+    },
+    "qty": "74.0000"
+   },
+   {
+    "px": {
+     "value": "0.4650",
+     "currency": "USD"
+    },
+    "qty": "883.0000"
+   },
+   {
+    "px": {
+     "value": "0.4700",
+     "currency": "USD"
+    },
+    "qty": "1526.3500"
+   },
+   {
+    "px": {
+     "value": "0.4750",
+     "currency": "USD"
+    },
+    "qty": "1.7000"
+   },
+   {
+    "px": {
+     "value": "0.4800",
+     "currency": "USD"
+    },
+    "qty": "1332.0000"
+   },
+   {
+    "px": {
+     "value": "0.5350",
+     "currency": "USD"
+    },
+    "qty": "6278.4900"
+   }
+  ],
+  "state": "MARKET_STATE_OPEN",
+  "transactTime": "2026-09-23T10:36:50.032722717Z"
+ }
+}

@@ -1,0 +1,1582 @@
+{
+ "events": [
+  {
+   "id": "118950",
+   "slug": "mlb-cws-kc-2026-09-23",
+   "title": "Chicago White Sox vs. Kansas City Royals",
+   "category": "sports",
+   "startTime": "2026-09-23T23:40:00Z",
+   "endDate": "2026-09-23T23:59:00Z",
+   "period": "NS",
+   "seriesSlug": "mlb-2026",
+   "tags": [
+    {
+     "slug": "sports",
+     "label": "Sports"
+    },
+    {
+     "slug": "games",
+     "label": "Games"
+    },
+    {
+     "slug": "mlb",
+     "label": "MLB"
+    },
+    {
+     "slug": "baseball",
+     "label": "Baseball"
+    }
+   ],
+   "teams": [
+    {
+     "id": 3009,
+     "name": "Chicago White Sox",
+     "abbreviation": "cws",
+     "league": "mlb",
+     "alias": "Chicago White Sox",
+     "safeName": "White Sox"
+    },
+    {
+     "id": 3012,
+     "name": "Kansas City Royals",
+     "abbreviation": "kc",
+     "league": "mlb",
+     "alias": "Kansas City Royals",
+     "safeName": "Royals"
+    }
+   ],
+   "markets": [
+    {
+     "id": "959211",
+     "slug": "asc-mlb-cws-kc-2026-09-23-pos-2pt5",
+     "question": "Will the Chicago White Sox cover 2.5 vs the Kansas City Royals in Chicago White Sox vs Kansas City Royals?",
+     "title": "Kansas City Royals wins by over 2.5 runs",
+     "description": "This market will settle to Yes if the Chicago White Sox cover a +2.5 run spread in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "spreads",
+     "sportsMarketType": "baseball_team_full_game_spread",
+     "line": 2.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.7750",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.7800",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.005,
+     "outcomes": "[\"+2.50\",\"-2.50\"]",
+     "outcomePrices": "[\"0.7750\",\"0.7800\"]",
+     "marketSides": [
+      {
+       "id": "1917906",
+       "description": "+2.50",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.7750",
+       "quote": {
+        "value": "0.7800",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "1917907",
+       "description": "-2.50",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.7800",
+       "quote": {
+        "value": "0.225",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "995975",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-f5-2pt5",
+     "question": "Will the total in CWS vs KC be more than 2.5?",
+     "title": "Over 2.5 total runs in first 5 innings",
+     "description": "This market will settle to Yes if the Chicago White Sox and Kansas City Royals combine for over 2.5 runs in the first 5 innings in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. If the game is delayed, postponed, or suspended before the first 5 innings are completed and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "totals",
+     "sportsMarketType": "baseball_team_first_five_total",
+     "line": 2.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.7500",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.7600",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Over\",\"Under\"]",
+     "outcomePrices": "[\"0.7500\",\"0.7600\"]",
+     "marketSides": [
+      {
+       "id": "1991434",
+       "description": "Over",
+       "long": true,
+       "price": "0.7500",
+       "quote": {
+        "value": "0.7600",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1991435",
+       "description": "Under",
+       "long": false,
+       "price": "0.7600",
+       "quote": {
+        "value": "0.25",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010392",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-cws-2pt5",
+     "question": "Will Chicago White Sox score more than 2.5 runs in CWS vs KC?",
+     "title": "Chicago White Sox to have Over 2.5 runs",
+     "description": "This market will settle to Yes if the Chicago White Sox score over 2.5 runs in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 2.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.6700",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.7500",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.6700\",\"0.7500\"]",
+     "marketSides": [
+      {
+       "id": "2020268",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.6700",
+       "quote": {
+        "value": "0.7500",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "2020269",
+       "description": "No",
+       "long": false,
+       "teamId": 3009,
+       "price": "0.7500",
+       "quote": {
+        "value": "0.33",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010397",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-kc-2pt5",
+     "question": "Will Kansas City Royals score more than 2.5 runs in CWS vs KC?",
+     "title": "Kansas City Royals to have Over 2.5 runs",
+     "description": "This market will settle to Yes if the Kansas City Royals score over 2.5 runs in the Kansas City Royals vs Chicago White Sox MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 2.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.6800",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.7400",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.6800\",\"0.7400\"]",
+     "marketSides": [
+      {
+       "id": "2020278",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3012,
+       "price": "0.6800",
+       "quote": {
+        "value": "0.7400",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      },
+      {
+       "id": "2020279",
+       "description": "No",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.7400",
+       "quote": {
+        "value": "0.32",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "995919",
+     "slug": "asc-mlb-cws-kc-2026-09-23-f5-pos-1pt5",
+     "question": "Will the Chicago White Sox cover +1.5 vs the Kansas City Royals in CWS vs KC in the first 5 innings?",
+     "title": "Kansas City Royals wins by over 1.5 runs in first 5 innings",
+     "description": "This market will settle to Yes if the Chicago White Sox cover a +1.5 run spread at the end of the first 5 innings in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. If the game is delayed, postponed, or suspended before the first 5 innings are completed and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "spreads",
+     "sportsMarketType": "baseball_team_first_five_spread",
+     "line": 1.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.6800",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.6900",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"+1.50\",\"-1.50\"]",
+     "outcomePrices": "[\"0.6800\",\"0.6900\"]",
+     "marketSides": [
+      {
+       "id": "1991322",
+       "description": "+1.50",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.6800",
+       "quote": {
+        "value": "0.6900",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "1991323",
+       "description": "-1.50",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.6900",
+       "quote": {
+        "value": "0.32",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "959210",
+     "slug": "asc-mlb-cws-kc-2026-09-23-pos-1pt5",
+     "question": "Will the Chicago White Sox cover 1.5 vs the Kansas City Royals in Chicago White Sox vs Kansas City Royals?",
+     "title": "Kansas City Royals wins by over 1.5 runs",
+     "description": "This market will settle to Yes if the Chicago White Sox cover a +1.5 run spread in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "spreads",
+     "sportsMarketType": "baseball_team_full_game_spread",
+     "line": 1.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.6800",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.6850",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.005,
+     "outcomes": "[\"+1.50\",\"-1.50\"]",
+     "outcomePrices": "[\"0.6800\",\"0.6850\"]",
+     "marketSides": [
+      {
+       "id": "1917904",
+       "description": "+1.50",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.6800",
+       "quote": {
+        "value": "0.6850",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "1917905",
+       "description": "-1.50",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.6850",
+       "quote": {
+        "value": "0.32",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "995976",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-f5-3pt5",
+     "question": "Will the total in CWS vs KC be more than 3.5?",
+     "title": "Over 3.5 total runs in first 5 innings",
+     "description": "This market will settle to Yes if the Chicago White Sox and Kansas City Royals combine for over 3.5 runs in the first 5 innings in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. If the game is delayed, postponed, or suspended before the first 5 innings are completed and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "totals",
+     "sportsMarketType": "baseball_team_first_five_total",
+     "line": 3.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.6100",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.6200",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Over\",\"Under\"]",
+     "outcomePrices": "[\"0.6100\",\"0.6200\"]",
+     "marketSides": [
+      {
+       "id": "1991436",
+       "description": "Over",
+       "long": true,
+       "price": "0.6100",
+       "quote": {
+        "value": "0.6200",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1991437",
+       "description": "Under",
+       "long": false,
+       "price": "0.6200",
+       "quote": {
+        "value": "0.39",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010393",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-cws-3pt5",
+     "question": "Will Chicago White Sox score more than 3.5 runs in CWS vs KC?",
+     "title": "Chicago White Sox to have Over 3.5 runs",
+     "description": "This market will settle to Yes if the Chicago White Sox score over 3.5 runs in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 3.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.5500",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.6200",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.5500\",\"0.6200\"]",
+     "marketSides": [
+      {
+       "id": "2020270",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.5500",
+       "quote": {
+        "value": "0.6200",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "2020271",
+       "description": "No",
+       "long": false,
+       "teamId": 3009,
+       "price": "0.6200",
+       "quote": {
+        "value": "0.45",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1007778",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-7pt5",
+     "question": "Will the total in Chicago White Sox vs Kansas City Royals be more than 7.5?",
+     "title": "Over 7.5 total runs",
+     "description": "This market will settle to Yes if the Chicago White Sox and Kansas City Royals combine for over 7.5 runs in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "totals",
+     "sportsMarketType": "baseball_team_full_game_total",
+     "line": 7.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.5750",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.5800",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.005,
+     "outcomes": "[\"Over\",\"Under\"]",
+     "outcomePrices": "[\"0.5750\",\"0.5800\"]",
+     "marketSides": [
+      {
+       "id": "2015040",
+       "description": "Over",
+       "long": true,
+       "price": "0.5750",
+       "quote": {
+        "value": "0.5800",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "2015041",
+       "description": "Under",
+       "long": false,
+       "price": "0.5800",
+       "quote": {
+        "value": "0.425",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010398",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-kc-3pt5",
+     "question": "Will Kansas City Royals score more than 3.5 runs in CWS vs KC?",
+     "title": "Kansas City Royals to have Over 3.5 runs",
+     "description": "This market will settle to Yes if the Kansas City Royals score over 3.5 runs in the Kansas City Royals vs Chicago White Sox MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 3.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.5300",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.5600",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.5300\",\"0.5600\"]",
+     "marketSides": [
+      {
+       "id": "2020280",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3012,
+       "price": "0.5300",
+       "quote": {
+        "value": "0.5600",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      },
+      {
+       "id": "2020281",
+       "description": "No",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.5600",
+       "quote": {
+        "value": "0.47",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "995977",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-f5-4pt5",
+     "question": "Will the total in CWS vs KC be more than 4.5?",
+     "title": "Over 4.5 total runs in first 5 innings",
+     "description": "This market will settle to Yes if the Chicago White Sox and Kansas City Royals combine for over 4.5 runs in the first 5 innings in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. If the game is delayed, postponed, or suspended before the first 5 innings are completed and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "totals",
+     "sportsMarketType": "baseball_team_first_five_total",
+     "line": 4.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.5200",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.5300",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Over\",\"Under\"]",
+     "outcomePrices": "[\"0.5200\",\"0.5300\"]",
+     "marketSides": [
+      {
+       "id": "1991438",
+       "description": "Over",
+       "long": true,
+       "price": "0.5200",
+       "quote": {
+        "value": "0.5300",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1991439",
+       "description": "Under",
+       "long": false,
+       "price": "0.5300",
+       "quote": {
+        "value": "0.48",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "959207",
+     "slug": "aec-mlb-cws-kc-2026-09-23",
+     "question": "Who will win in the upcoming baseball event Chicago White Sox vs Kansas City Royals scheduled for September 23, 2026 at 11:40 PM UTC?",
+     "title": "Chicago White Sox vs Kansas City Royals",
+     "description": "This market will settle to the winner of the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. Extra innings are included if played. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "moneyline",
+     "sportsMarketType": "baseball_team_full_game_winner",
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.5150",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.5200",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.005,
+     "outcomes": "[\"Chicago White Sox\",\"Kansas City Royals\"]",
+     "outcomePrices": "[\"0.5150\",\"0.5200\"]",
+     "marketSides": [
+      {
+       "id": "1917898",
+       "description": "Chicago White Sox",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.5150",
+       "quote": {
+        "value": "0.5200",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "1917899",
+       "description": "Kansas City Royals",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.5200",
+       "quote": {
+        "value": "0.485",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1007779",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-8pt5",
+     "question": "Will the total in Chicago White Sox vs Kansas City Royals be more than 8.5?",
+     "title": "Over 8.5 total runs",
+     "description": "This market will settle to Yes if the Chicago White Sox and Kansas City Royals combine for over 8.5 runs in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "totals",
+     "sportsMarketType": "baseball_team_full_game_total",
+     "line": 8.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.4950",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.5000",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.005,
+     "outcomes": "[\"Over\",\"Under\"]",
+     "outcomePrices": "[\"0.4950\",\"0.5000\"]",
+     "marketSides": [
+      {
+       "id": "2015042",
+       "description": "Over",
+       "long": true,
+       "price": "0.4950",
+       "quote": {
+        "value": "0.5000",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "2015043",
+       "description": "Under",
+       "long": false,
+       "price": "0.5000",
+       "quote": {
+        "value": "0.505",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010394",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-cws-4pt5",
+     "question": "Will Chicago White Sox score more than 4.5 runs in CWS vs KC?",
+     "title": "Chicago White Sox to have Over 4.5 runs",
+     "description": "This market will settle to Yes if the Chicago White Sox score over 4.5 runs in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 4.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.4500",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.4700",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.4500\",\"0.4700\"]",
+     "marketSides": [
+      {
+       "id": "2020272",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.4500",
+       "quote": {
+        "value": "0.4700",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "2020273",
+       "description": "No",
+       "long": false,
+       "teamId": 3009,
+       "price": "0.4700",
+       "quote": {
+        "value": "0.55",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010399",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-kc-4pt5",
+     "question": "Will Kansas City Royals score more than 4.5 runs in CWS vs KC?",
+     "title": "Kansas City Royals to have Over 4.5 runs",
+     "description": "This market will settle to Yes if the Kansas City Royals score over 4.5 runs in the Kansas City Royals vs Chicago White Sox MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 4.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.3900",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.4500",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.3900\",\"0.4500\"]",
+     "marketSides": [
+      {
+       "id": "2020282",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3012,
+       "price": "0.3900",
+       "quote": {
+        "value": "0.4500",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      },
+      {
+       "id": "2020283",
+       "description": "No",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.4500",
+       "quote": {
+        "value": "0.61",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "995978",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-f5-5pt5",
+     "question": "Will the total in CWS vs KC be more than 5.5?",
+     "title": "Over 5.5 total runs in first 5 innings",
+     "description": "This market will settle to Yes if the Chicago White Sox and Kansas City Royals combine for over 5.5 runs in the first 5 innings in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. If the game is delayed, postponed, or suspended before the first 5 innings are completed and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "totals",
+     "sportsMarketType": "baseball_team_first_five_total",
+     "line": 5.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.4000",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.4100",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Over\",\"Under\"]",
+     "outcomePrices": "[\"0.4000\",\"0.4100\"]",
+     "marketSides": [
+      {
+       "id": "1991440",
+       "description": "Over",
+       "long": true,
+       "price": "0.4000",
+       "quote": {
+        "value": "0.4100",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1991441",
+       "description": "Under",
+       "long": false,
+       "price": "0.4100",
+       "quote": {
+        "value": "0.6",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "959209",
+     "slug": "asc-mlb-cws-kc-2026-09-23-neg-1pt5",
+     "question": "Will the Chicago White Sox cover -1.5 vs the Kansas City Royals in Chicago White Sox vs Kansas City Royals?",
+     "title": "Chicago White Sox wins by over 1.5 runs",
+     "description": "This market will settle to Yes if the Chicago White Sox cover a -1.5 run spread in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "spreads",
+     "sportsMarketType": "baseball_team_full_game_spread",
+     "line": -1.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.3900",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.3950",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.005,
+     "outcomes": "[\"-1.50\",\"+1.50\"]",
+     "outcomePrices": "[\"0.3900\",\"0.3950\"]",
+     "marketSides": [
+      {
+       "id": "1917902",
+       "description": "-1.50",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.3900",
+       "quote": {
+        "value": "0.3950",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "1917903",
+       "description": "+1.50",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.3950",
+       "quote": {
+        "value": "0.61",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1007780",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-9pt5",
+     "question": "Will the total in Chicago White Sox vs Kansas City Royals be more than 9.5?",
+     "title": "Over 9.5 total runs",
+     "description": "This market will settle to Yes if the Chicago White Sox and Kansas City Royals combine for over 9.5 runs in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "totals",
+     "sportsMarketType": "baseball_team_full_game_total",
+     "line": 9.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.3850",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.3900",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.005,
+     "outcomes": "[\"Over\",\"Under\"]",
+     "outcomePrices": "[\"0.3850\",\"0.3900\"]",
+     "marketSides": [
+      {
+       "id": "2015044",
+       "description": "Over",
+       "long": true,
+       "price": "0.3850",
+       "quote": {
+        "value": "0.3900",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "2015045",
+       "description": "Under",
+       "long": false,
+       "price": "0.3900",
+       "quote": {
+        "value": "0.615",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010395",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-cws-5pt5",
+     "question": "Will Chicago White Sox score more than 5.5 runs in CWS vs KC?",
+     "title": "Chicago White Sox to have Over 5.5 runs",
+     "description": "This market will settle to Yes if the Chicago White Sox score over 5.5 runs in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 5.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.3100",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.3800",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.3100\",\"0.3800\"]",
+     "marketSides": [
+      {
+       "id": "2020274",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.3100",
+       "quote": {
+        "value": "0.3800",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "2020275",
+       "description": "No",
+       "long": false,
+       "teamId": 3009,
+       "price": "0.3800",
+       "quote": {
+        "value": "0.69",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010400",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-kc-5pt5",
+     "question": "Will Kansas City Royals score more than 5.5 runs in CWS vs KC?",
+     "title": "Kansas City Royals to have Over 5.5 runs",
+     "description": "This market will settle to Yes if the Kansas City Royals score over 5.5 runs in the Kansas City Royals vs Chicago White Sox MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 5.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.2600",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.3300",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.2600\",\"0.3300\"]",
+     "marketSides": [
+      {
+       "id": "2020284",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3012,
+       "price": "0.2600",
+       "quote": {
+        "value": "0.3300",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      },
+      {
+       "id": "2020285",
+       "description": "No",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.3300",
+       "quote": {
+        "value": "0.74",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "995918",
+     "slug": "asc-mlb-cws-kc-2026-09-23-f5-neg-1pt5",
+     "question": "Will the Chicago White Sox cover -1.5 vs the Kansas City Royals in CWS vs KC in the first 5 innings?",
+     "title": "Chicago White Sox wins by over 1.5 runs in first 5 innings",
+     "description": "This market will settle to Yes if the Chicago White Sox cover a -1.5 run spread at the end of the first 5 innings in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. If the game is delayed, postponed, or suspended before the first 5 innings are completed and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "spreads",
+     "sportsMarketType": "baseball_team_first_five_spread",
+     "line": -1.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.2900",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.3000",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"-1.50\",\"+1.50\"]",
+     "outcomePrices": "[\"0.2900\",\"0.3000\"]",
+     "marketSides": [
+      {
+       "id": "1991320",
+       "description": "-1.50",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.2900",
+       "quote": {
+        "value": "0.3000",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "1991321",
+       "description": "+1.50",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.3000",
+       "quote": {
+        "value": "0.71",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "959208",
+     "slug": "asc-mlb-cws-kc-2026-09-23-neg-2pt5",
+     "question": "Will the Chicago White Sox cover -2.5 vs the Kansas City Royals in Chicago White Sox vs Kansas City Royals?",
+     "title": "Chicago White Sox wins by over 2.5 runs",
+     "description": "This market will settle to Yes if the Chicago White Sox cover a -2.5 run spread in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "spreads",
+     "sportsMarketType": "baseball_team_full_game_spread",
+     "line": -2.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.2950",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.3000",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.005,
+     "outcomes": "[\"-2.50\",\"+2.50\"]",
+     "outcomePrices": "[\"0.2950\",\"0.3000\"]",
+     "marketSides": [
+      {
+       "id": "1917900",
+       "description": "-2.50",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.2950",
+       "quote": {
+        "value": "0.3000",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "1917901",
+       "description": "+2.50",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.3000",
+       "quote": {
+        "value": "0.705",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    },
+    {
+     "id": "995979",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-f5-6pt5",
+     "question": "Will the total in CWS vs KC be more than 6.5?",
+     "title": "Over 6.5 total runs in first 5 innings",
+     "description": "This market will settle to Yes if the Chicago White Sox and Kansas City Royals combine for over 6.5 runs in the first 5 innings in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23 at 7:40PM ET. If the game is delayed, postponed, or suspended before the first 5 innings are completed and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "totals",
+     "sportsMarketType": "baseball_team_first_five_total",
+     "line": 6.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.2900",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.3000",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Over\",\"Under\"]",
+     "outcomePrices": "[\"0.2900\",\"0.3000\"]",
+     "marketSides": [
+      {
+       "id": "1991442",
+       "description": "Over",
+       "long": true,
+       "price": "0.2900",
+       "quote": {
+        "value": "0.3000",
+        "currency": "USD"
+       }
+      },
+      {
+       "id": "1991443",
+       "description": "Under",
+       "long": false,
+       "price": "0.3000",
+       "quote": {
+        "value": "0.71",
+        "currency": "USD"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010396",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-cws-6pt5",
+     "question": "Will Chicago White Sox score more than 6.5 runs in CWS vs KC?",
+     "title": "Chicago White Sox to have Over 6.5 runs",
+     "description": "This market will settle to Yes if the Chicago White Sox score over 6.5 runs in the Chicago White Sox vs Kansas City Royals MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 6.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.2200",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.2800",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.2200\",\"0.2800\"]",
+     "marketSides": [
+      {
+       "id": "2020276",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3009,
+       "price": "0.2200",
+       "quote": {
+        "value": "0.2800",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      },
+      {
+       "id": "2020277",
+       "description": "No",
+       "long": false,
+       "teamId": 3009,
+       "price": "0.2800",
+       "quote": {
+        "value": "0.78",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3009,
+        "name": "Chicago White Sox",
+        "abbreviation": "cws",
+        "league": "mlb",
+        "alias": "Chicago White Sox",
+        "safeName": "White Sox"
+       }
+      }
+     ]
+    },
+    {
+     "id": "1010401",
+     "slug": "tsc-mlb-cws-kc-2026-09-23-tt-kc-6pt5",
+     "question": "Will Kansas City Royals score more than 6.5 runs in CWS vs KC?",
+     "title": "Kansas City Royals to have Over 6.5 runs",
+     "description": "This market will settle to Yes if the Kansas City Royals score over 6.5 runs in the Kansas City Royals vs Chicago White Sox MLB game scheduled for 2026-09-23. Extra innings are included if played. If the game is shortened but an official final result is declared, the market will settle based on that result. If the game is delayed, postponed, or suspended and not rescheduled to a date within two weeks of the originally scheduled date, the market will settle to the last fair market price. Outcome sourced from MLB.",
+     "active": true,
+     "closed": false,
+     "status": "MARKET_STATUS_OPEN",
+     "marketType": "props",
+     "sportsMarketType": "baseball_team_total_runs",
+     "line": 6.5,
+     "gameStartTime": "2026-09-23T23:40:00Z",
+     "endDate": "2026-10-08T03:40:00Z",
+     "bestBidQuote": {
+      "value": "0.1700",
+      "currency": "USD"
+     },
+     "bestAskQuote": {
+      "value": "0.2400",
+      "currency": "USD"
+     },
+     "feeCoefficient": 0.0695,
+     "orderPriceMinTickSize": 0.01,
+     "outcomes": "[\"Yes\",\"No\"]",
+     "outcomePrices": "[\"0.1700\",\"0.2400\"]",
+     "marketSides": [
+      {
+       "id": "2020286",
+       "description": "Yes",
+       "long": true,
+       "teamId": 3012,
+       "price": "0.1700",
+       "quote": {
+        "value": "0.2400",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      },
+      {
+       "id": "2020287",
+       "description": "No",
+       "long": false,
+       "teamId": 3012,
+       "price": "0.2400",
+       "quote": {
+        "value": "0.83",
+        "currency": "USD"
+       },
+       "team": {
+        "id": 3012,
+        "name": "Kansas City Royals",
+        "abbreviation": "kc",
+        "league": "mlb",
+        "alias": "Kansas City Royals",
+        "safeName": "Royals"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,23 @@
+{
+ "series": {
+  "ticker": "KXMLBTOTAL",
+  "title": "Pro Baseball Total Points",
+  "category": "Sports",
+  "categories": [
+   "Sports"
+  ],
+  "tags": [
+   "Baseball"
+  ],
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "settlement_sources": [
+   {
+    "name": "MLB",
+    "url": "https://www.mlb.com/"
+   }
+  ],
+  "contract_terms_url": "https://assets.kalshi.com/contract_terms/BASEBALLTOTALS.pdf",
+  "frequency": "custom"
+ }
+}
