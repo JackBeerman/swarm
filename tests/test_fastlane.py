@@ -276,3 +276,30 @@ def test_game_lines_rank_ahead_of_props_and_empty_books_are_skipped():
     assert fl.listed_width({"outcomePrices": '["0.0100","0.9900"]'}) > 0.9
     assert fl.listed_width({"outcomePrices": '["0.4500","0.4550"]'}) < 0.01
     assert fl.listed_width({"outcomePrices": '["0.5000"]'}) == 0.0
+
+
+# --- scenario-driven sides and brief coherence -----------------------------
+
+def test_the_briefs_price_against_the_book_decides_the_side():
+    th = FastLaneThresholds()
+    assert fl.scenario_decision(0.40, 0.49, 0.51, th)[0] == "lowers"     # fair below bid -> NO
+    assert fl.scenario_decision(0.62, 0.49, 0.51, th)[0] == "raises"     # fair above ask -> YES
+    assert fl.scenario_decision(0.52, 0.49, 0.51, th) is None            # inside the book
+    assert fl.scenario_decision(0.53, 0.49, 0.51, th) is None, "fee eats a 2c edge"
+    assert fl.scenario_decision(None, 0.49, 0.51, th) is None
+
+
+def test_incoherent_scenario_prices_are_rejected_in_code():
+    """A brief priced Toronto -1.5 at 0.98 and Toronto to win at 0.05."""
+    mk = [{"slug": "ml", "outcome_kind": "moneyline", "yes_team": "Toronto Blue Jays",
+           "outcome": "Toronto Blue Jays wins"},
+          {"slug": "rl", "outcome_kind": "spread", "yes_team": "Toronto Blue Jays",
+           "outcome": "Toronto Blue Jays -1.5"},
+          {"slug": "plus", "outcome_kind": "spread", "yes_team": "Toronto Blue Jays",
+           "outcome": "Toronto Blue Jays +1.5"}]
+    assert fl.coherent({"ml": 0.05, "rl": 0.98}, mk)
+    assert fl.coherent({"ml": 0.60, "plus": 0.40}, mk), "winning cannot beat covering +1.5"
+    assert fl.coherent({"ml": 0.55, "rl": 0.38, "plus": 0.72}, mk) is None
+    raw = {"scenarios": [{"id": "bad", "trigger": "t", "affects": {"ml": 0.05, "rl": 0.98}},
+                         {"id": "ok", "trigger": "t", "affects": {"ml": 0.55, "rl": 0.38}}]}
+    assert [s["id"] for s in fl._clean_brief(raw, {"ml", "rl", "plus"}, mk)["scenarios"]] == ["ok"]

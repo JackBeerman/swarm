@@ -1017,3 +1017,8 @@ class FastLaneThresholds:
     max_repeat: float = 0.50             # above this, the fact was already acted on
     min_scenario_confidence: float = 0.60  # Choice confidence to trust a scenario match
     max_contradiction: float = 0.50      # above this, stand down and re-brief
+    # PLACEHOLDER, shadow only. When a scenario matches, the brief's fair
+    # price vs the book (net of fees) decides the side; this is the edge
+    # per share it must clear. Measured probe 2026-09-23: scenario matching
+    # 5/5 on MLB events vs 10/15 for the per-market direction questions.
+    min_scenario_edge: float = 0.03

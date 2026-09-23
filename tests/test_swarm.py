@@ -1258,3 +1258,15 @@ async def test_sizer_requires_the_edge_to_survive_the_fee():
     assert sw.size_from_signal(sig, bbo, 100.0, 1.0, sw.RiskConfig(min_edge=0.10)) is None
     o = sw.size_from_signal(sig, bbo, 100.0, 1.0, sw.RiskConfig(min_edge=0.08))
     assert o is not None and o.edge == pytest.approx(0.0825, abs=1e-4)
+
+
+async def test_weather_markets_get_no_paid_research(monkeypatch):
+    """Priced in code; four weather paper evaluations once cost $0.20 for the market's own price."""
+    calls = patch_llms(monkeypatch)
+    s = make_swarm(FakeBudget())
+    result = sw.PipelineResult(market_slug="tc-temp-nychigh-2026-09-24-gte67lt68f",
+                               triage=TriageVerdict(market_slug="x", escalate=True, gate_score=0.9))
+    out = await s.research(result, {"slug": "tc-temp-nychigh-2026-09-24-gte67lt68f",
+                                    "tags": ["weather"], "question": "q", "outcome": "67 to 68"}, BBO)
+    await s.jev.aclose()
+    assert out.halted_at == "priced_in_code" and calls["n"] == 0

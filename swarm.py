@@ -1055,6 +1055,13 @@ class Swarm:
             result.halted_at = result.halted_at or "not_escalated"
             return result
 
+        # A family priced in code (weather: weather.py / weather_ensemble.py)
+        # gets no LLM research. Measured 2026-09-22: four weather paper
+        # evaluations cost $0.20 and Tier 3 returned the market's own price.
+        if not _skills.research_allowed(market):
+            result.halted_at = "priced_in_code"
+            return result
+
         # ---- Budget check before spending anything real -------------
         if not await self.budget.can_spend(self.ESCALATION_COST_ESTIMATE_USD):
             result.halted_at = "budget_exhausted"

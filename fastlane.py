@@ -77,6 +77,7 @@ from search import (  # noqa: E402
     SEARCH_MODEL,
     WEB_SEARCH_TOOL,
 )
+from fees import fee_per_share  # noqa: E402
 from swarm import JevTriage, _loads_loose  # noqa: E402
 import skills as _skills  # noqa: E402
 
@@ -216,6 +217,7 @@ def connect(path: str = DB_PATH) -> sqlite3.Connection:
     have = {r["name"] for r in conn.execute("PRAGMA table_info(signals)")}
     for col, typ in (("repeat", "REAL"), ("scenario", "TEXT"), ("scenario_conf", "REAL"),
                      ("contradicts", "REAL"), ("fair_yes", "REAL"), ("edge", "REAL"),
+                     ("acted_by", "TEXT"),
                      ("resolved_outcome", "TEXT")):
         if col not in have:
             conn.execute(f"ALTER TABLE signals ADD COLUMN {col} {typ}")  # noqa: S608 -- constants
@@ -526,7 +528,7 @@ async def build_brief(client: httpx.AsyncClient, event_title: str,
                            if isinstance(b, dict) and b.get("type") == "text")
         raw = _loads_loose(text)
         keys = {m["slug"] for m in (markets or [])}
-        return _clean_brief(raw, keys)
+        return _clean_brief(raw, keys, markets or [])
     except Exception as exc:  # noqa: BLE001 -- a failed brief degrades the run, it does not stop it
         log.warning("brief failed for %s: %s", event_title, exc)
         return {}
@@ -543,7 +545,49 @@ def _markets_block(markets: list[dict[str, Any]], quotes: dict[str, dict[str, An
     return "\n".join(lines) or "- (none)"
 
 
-def _clean_brief(raw: Any, market_keys: set[str]) -> dict[str, Any]:
+def _line_of(market: dict[str, Any]) -> float | None:
+    """Signed line of a spread's YES side ("Toronto Blue Jays -1.5" -> -1.5)."""
+    try:
+        return float(str(market.get("outcome") or "").split()[-1])
+    except ValueError:
+        return None
+
+
+def coherent(affects: dict[str, float], markets: list[dict[str, Any]]) -> str | None:
+    """
+    Why a scenario's prices are impossible, or None if they are not.
+
+    For one team: P(cover a lower line) <= P(win) <= P(cover a higher line),
+    and a team's moneyline plus its opponent's must be near 1. A brief once
+    priced "Toronto -1.5" at 0.98 with "Toronto wins" at 0.05. Code rejects
+    that; no model is asked.
+    """
+    by_team: dict[str, list[tuple[float, float]]] = {}
+    wins: dict[str, float] = {}
+    for m in markets:
+        p = affects.get(m.get("slug"))
+        team = m.get("yes_team")
+        if p is None or not team:
+            continue
+        if m.get("outcome_kind") == "moneyline":
+            wins[team] = p
+            by_team.setdefault(team, []).append((0.0, p))   # a win is covering a line of 0
+        elif m.get("outcome_kind") == "spread":
+            line = _line_of(m)
+            if line is not None:
+                by_team.setdefault(team, []).append((line, p))
+    for team, pts in by_team.items():
+        pts.sort()
+        for (l1, p1), (l2, p2) in zip(pts, pts[1:], strict=False):
+            if l1 < l2 and p1 > p2 + 0.02:
+                return f"{team}: P(cover {l1:+g})={p1:.2f} > P(cover {l2:+g})={p2:.2f}"
+    if len(wins) == 2 and abs(sum(wins.values()) - 1.0) > 0.10:
+        return f"moneylines sum to {sum(wins.values()):.2f}"
+    return None
+
+
+def _clean_brief(raw: Any, market_keys: set[str],
+                 markets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Keep only what the schema promised; drop anything malformed rather than trusting it."""
     if not isinstance(raw, dict):
         return {}
@@ -562,6 +606,10 @@ def _clean_brief(raw: Any, market_keys: set[str]) -> dict[str, Any]:
             if k in market_keys and isinstance(v, (int, float)) and 0.0 <= v <= 1.0:
                 affects[k] = float(v)
         if sid and trig and affects and sid not in seen and sid != "none_of_these":
+            bad = coherent(affects, markets or [])
+            if bad:
+                log.warning("brief scenario %s dropped, impossible prices: %s", sid, bad)
+                continue
             seen.add(sid)
             scenarios.append({"id": sid, "trigger": trig, "affects": affects})
     return {"teams": teams, "facts": facts, "scenarios": scenarios,
@@ -600,6 +648,26 @@ def build_request(headline: dict[str, Any], event: dict[str, Any], model: str) -
         },
         "questions": questions,
     }
+
+
+def scenario_decision(fair: float | None, bid: float | None, ask: float | None,
+                      th: FastLaneThresholds) -> tuple[str, float] | None:
+    """
+    (effect, edge per share net of fees) when the brief's fair price beats
+    the book by at least th.min_scenario_edge; else None.
+
+    Buy YES when fair is above the ask; buy NO when fair is below the bid.
+    The fee is fees.fee_per_share on the price actually paid.
+    """
+    if fair is None or bid is None or ask is None:
+        return None
+    yes_edge = fair - ask - fee_per_share(ask)
+    no_edge = bid - fair - fee_per_share(1.0 - bid)
+    if yes_edge >= th.min_scenario_edge and yes_edge >= no_edge:
+        return "raises", round(yes_edge, 4)
+    if no_edge >= th.min_scenario_edge:
+        return "lowers", round(no_edge, 4)
+    return None
 
 
 def would_act(row: dict[str, Any], th: FastLaneThresholds) -> bool:
@@ -714,26 +782,32 @@ class Recorder:
 
         for m, pm_ans in zip(ev["markets"], per_market, strict=True):
             row = {**head, **pm_ans}
-            acted = would_act(row, self.th)
             bbo = await self.quotes.bbo(m["slug"]) or {}
             fair = matched["affects"].get(m["slug"]) if matched else None
-            edge = None
-            if fair is not None and bbo.get("bid") is not None and bbo.get("ask") is not None:
-                # The number the slip would use, computed here and nowhere else.
-                edge = (fair - bbo["ask"]) if pm_ans["effect"] == "raises" else (bbo["bid"] - fair)
+            decision = scenario_decision(fair, bbo.get("bid"), bbo.get("ask"), self.th)
+            if decision:
+                # A priced scenario matched: the brief's fair price against the
+                # book decides the side, in code. Jev only recognised the event.
+                effect, edge, acted_by = decision[0], decision[1], "scenario"
+                acted = (head["political"] <= self.th.max_political
+                         and head.get("repeat", 0.0) <= self.th.max_repeat)
+            else:
+                effect, edge, acted_by = pm_ans["effect"], None, "effect"
+                acted = would_act(row, self.th)
+            pm_ans = {**pm_ans, "effect": effect}
             cur = self.conn.execute(
                 "INSERT INTO signals (headline_id, at, event_slug, market_slug, question, outcome,"
                 " reports_new_fact, concerns_event, political, repeat, effect, effect_conf,"
                 " size, acted, jev_ms, model, bid0, ask0, scenario, scenario_conf,"
-                " contradicts, fair_yes, edge)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " contradicts, fair_yes, edge, acted_by)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (hid, datetime.now(timezone.utc).isoformat(), event_slug, m["slug"],
                  m.get("question"), m.get("outcome"), head["reports_new_fact"],
                  head["concerns_event"], head["political"], head["repeat"], pm_ans["effect"],
                  pm_ans["effect_conf"], pm_ans["size"], int(acted), ms,
                  body.get("model"), bbo.get("bid"), bbo.get("ask"),
                  head.get("scenario"), head.get("scenario_conf"), head.get("contradicts"),
-                 fair, edge))
+                 fair, edge, acted_by if acted else None))
             self.conn.commit()
             if acted:
                 self.stats["acted"] += 1

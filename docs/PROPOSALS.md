@@ -81,7 +81,7 @@ regenerate them against the current `questions.py` before applying.
 injected only where one matches. Unmatched markets get byte-identical prompts
 (tested). These follow-ups need a decision:
 
-a. **Weather skips Tier 2/3 entirely.** `skills.research_allowed(market)` is
+a. **[APPLIED 2026-09-23] Weather skips Tier 2/3 entirely.** `skills.research_allowed(market)` is
    False for `tc-temp`. Today the playbook only tells the gatherers not to
    search; each weather escalation still pays for three gatherer calls and
    synthesis. Proposed: in `Swarm.research`, halt with `priced_in_code` before
@@ -107,7 +107,7 @@ e. **Stored-brief audit, MLB 2026-09-22 (fastlane.db, 7 briefs).** 18 of 58
    triggers, 7 were improbable early blowouts and 7 were one player's stat line.
    These numbers are in the MLB skill. Re-count on briefs written with the
    skill before claiming it helped.
-f. **One A/B brief, Blue Jays vs Orioles, 2026-09-22 (Haiku 4.5, same
+f. **[Ladder check APPLIED 2026-09-23 as fastlane.coherent()] One A/B brief, Blue Jays vs Orioles, 2026-09-22 (Haiku 4.5, same
    markets and prices, one run each).**
    - Without the skill: 8 facts, 7 scenarios. No probable starter was named
      (a scenario guessed "Yesavage starts"), 2 facts were long-term IL, and
