@@ -51,7 +51,7 @@ Where the stubs and the wire disagree, the wire wins.
 | `volumeMin` (filter) | accepted and **silently ignored** |
 | `Event["endTime"]` | `endDate`; 0/50 events had `endTime` |
 | `question` → `title` | **both exist, 100%**, and differ |
-| `Market["outcome"]` | does not exist; the leg is `title` |
+| `Market["outcome"]` | does not exist; YES pays the `marketSides` entry with `long=True` -- on underdog spreads `title` (and NFL `description`) name the OTHER team; use `adapters.yes_side()` |
 | `bbo["bestBid"]` | `bbo["marketData"]["bestBid"]`, a decimal **string** |
 | `resolutionCriteria`, `oneHourPriceChange` | do not exist |
 
