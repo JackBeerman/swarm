@@ -32,7 +32,7 @@ LOCK = ROOT / ".daily.lock"
 LOG_DIR = ROOT / "logs"
 WAIT_FOR_OTHERS_S = 300
 EXCHANGE_HEAVY = ("fastlane.py", "shadow.py", "daemon.py", "arb.py", "inplay.py", "closer.py",
-                  "weather_ensemble.py")
+                  "weather_ensemble.py", "xvenue.py")
 
 #: (name, argv after the interpreter, timeout seconds). Order matters:
 #: fill outcomes before anything that reports on them.
@@ -42,6 +42,7 @@ STEPS: list[tuple[str, list[str], int]] = [
     ("ensemble-backfill", ["weather_ensemble.py", "--backfill"], 600),
     ("ensemble", ["weather_ensemble.py"], 600),
     ("arb", ["arb.py"], 900),
+    ("xvenue", ["xvenue.py"], 300),
     ("shadow-collect", ["shadow.py", "--collect", "--limit", "200", "--events", "60",
                         "--min-hours", "1"], 2400),
     ("shadow-backfill", ["shadow.py", "--backfill"], 2400),

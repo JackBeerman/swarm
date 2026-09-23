@@ -275,6 +275,7 @@ is the open question.
 | [weather.py](weather.py) | NWS forecast-implied band probability vs the market. |
 | [weather_ensemble.py](weather_ensemble.py) | ECMWF, GFS, ICON and WeatherNext 2 ensembles via Open-Meteo, scored side by side. |
 | [arb.py](arb.py) | Complete-set arbitrage on provably exhaustive ladders (weather bands). |
+| [kalshi.py](kalshi.py), [xvenue.py](xvenue.py) | Same event on Kalshi and Polymarket: matched pairs priced as a two-venue hedge after both venues' fees. Read-only. [docs/VENUES.md](docs/VENUES.md). |
 | [reference.py](reference.py) | Sharp sportsbook prices, de-vigged, as a fair value for game lines. Inert without `ODDS_API_KEY`. |
 | **Measurement** | |
 | [closer.py](closer.py) | Closing line value: the pre-start price, captured every ~10 minutes. |
@@ -285,7 +286,7 @@ is the open question.
 | [config.py](config.py) | Env loading, fail-fast validation. |
 | [dashboard/ledger.html](dashboard/ledger.html) | The shared results page. Hosted on claude.ai; data pushed from `tools/dashboard_export.py`. |
 | [tools/](tools/) | Probes (`probe_restricted`, `probe_fastlane`, `probe_dedup`, `probe_concerns`, `probe_mlb_events`), `bench_roles`, `measure_sources`, `survey_tags`, `by_category`, `fix_inverted_spreads`. |
-| [tests/](tests/) | 410 tests. No network, no keys; httpx is mocked at the transport layer. |
+| [tests/](tests/) | 437 tests. No network, no keys; httpx is mocked at the transport layer. |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, wire-format facts, bug history. Read before editing. |
 | [docs/](docs/) | [BRIEF.md](docs/BRIEF.md) (how Jev gets its information), [AGENTS.md](docs/AGENTS.md) (roles), [ROUTING.md](docs/ROUTING.md), [PROPOSALS.md](docs/PROPOSALS.md) (changes awaiting a human). |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, where changes go, and what needs evidence. |
@@ -295,7 +296,7 @@ is the open question.
 ```bash
 make setup                 # venv, deps, .env from the template
 # put your own keys in .env; it is gitignored. Never commit or paste it.
-make check                 # ruff + 410 tests, no network, no keys needed
+make check                 # ruff + 437 tests, no network, no keys needed
 python verify_setup.py     # one live Jev call (~$0.00008) to prove the key
 ```
 
