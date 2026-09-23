@@ -21,3 +21,5 @@ Thumbs.db
 
 # dashboard export (pushed to the shared dashboard, not committed)
 .dashboard/
+logs/
+.daily.lock

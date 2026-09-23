@@ -1,4 +1,4 @@
-.PHONY: setup test lint check shadow backfill analyze sweep score calibrate probe fastlane fastlane-score weather arb paper clean
+.PHONY: setup test lint check shadow backfill analyze sweep score calibrate probe fastlane fastlane-score weather arb daily paper clean
 
 VENV := .venv
 
@@ -67,3 +67,6 @@ weather:               ## NWS forecast vs weather-market prices, then fill outco
 
 arb:                   ## complete-set arbitrage scan on provably exhaustive ladders (no orders)
 	$(PY) arb.py
+
+daily:                 ## the whole shadow routine once: backfills, weather, arb, collect, export (no orders)
+	$(PY) run_daily.py
